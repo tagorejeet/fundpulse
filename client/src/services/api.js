@@ -4,13 +4,16 @@
 
 const API_BASE = '/api';
 
-export const fetchFunds = async ({ category = 'all', search = '', plan = 'regular', page = 1, limit = 50 } = {}) => {
+export const fetchFunds = async ({ category = 'all', search = '', plan = 'regular', page = 1, limit = 50, customDays = 33, startDate, endDate } = {}) => {
   const params = new URLSearchParams();
   if (category && category !== 'all') params.append('category', category);
   if (search && search.trim()) params.append('search', search.trim());
   if (plan) params.append('plan', plan);
   if (page) params.append('page', String(page));
   if (limit) params.append('limit', String(limit));
+  if (customDays) params.append('customDays', String(customDays));
+  if (startDate) params.append('startDate', startDate);
+  if (endDate) params.append('endDate', endDate);
 
   const response = await fetch(`${API_BASE}/funds?${params.toString()}`);
   if (!response.ok) {
@@ -20,7 +23,7 @@ export const fetchFunds = async ({ category = 'all', search = '', plan = 'regula
   return response.json();
 };
 
-export const fetchBatchFunds = async ({ ids = [], plan = 'regular' } = {}) => {
+export const fetchBatchFunds = async ({ ids = [], plan = 'regular', customDays = 33, startDate, endDate } = {}) => {
   if (!ids || ids.length === 0) {
     return { success: true, data: { funds: [], total: 0 } };
   }
@@ -30,7 +33,7 @@ export const fetchBatchFunds = async ({ ids = [], plan = 'regular' } = {}) => {
     headers: {
       'Content-Type': 'application/json'
     },
-    body: JSON.stringify({ ids, plan })
+    body: JSON.stringify({ ids, plan, customDays, startDate, endDate })
   });
 
   if (!response.ok) {
@@ -40,8 +43,14 @@ export const fetchBatchFunds = async ({ ids = [], plan = 'regular' } = {}) => {
   return response.json();
 };
 
-export const fetchFundById = async (id, plan = 'regular') => {
-  const response = await fetch(`${API_BASE}/funds/${id}?plan=${plan}`);
+export const fetchFundById = async (id, plan = 'regular', customDays = 33, startDate, endDate) => {
+  const params = new URLSearchParams();
+  if (plan) params.append('plan', plan);
+  if (customDays) params.append('customDays', String(customDays));
+  if (startDate) params.append('startDate', startDate);
+  if (endDate) params.append('endDate', endDate);
+
+  const response = await fetch(`${API_BASE}/funds/${id}?${params.toString()}`);
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({}));
     throw new Error(errorData.error || 'Failed to fetch fund details.');

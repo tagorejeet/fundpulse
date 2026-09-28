@@ -75,6 +75,17 @@ function calculateFormulaReturn(V0, VT, T) {
   return Number(result.toFixed(2));
 }
 
+// Day Calculation formula: Annualized Return = 4 * ((VT / V0)^(365 / (4 * D)) - 1)
+function calculateDayFormulaReturn(V0, VT, D) {
+  if (!V0 || !VT || V0 <= 0 || VT <= 0 || !D || D <= 0) return null;
+  const ratio = VT / V0;
+  const exponent = 365 / (4 * D);
+  const val = 4 * (Math.pow(ratio, exponent) - 1);
+  const result = val * 100;
+  if (isNaN(result) || !isFinite(result)) return null;
+  return Number(result.toFixed(2));
+}
+
 function categorizeScheme(schemeCategory, schemeName) {
   const cat = (schemeCategory || '').toLowerCase();
   const name = (schemeName || '').toLowerCase();
@@ -383,9 +394,9 @@ class AmfiService {
   }
 
   /**
-   * Calculate 1Y, 2Y, 3Y, 5Y, 10Y formula returns for a scheme under the requested plan
+   * Calculate 1Y, 2Y, 3Y, 5Y, 10Y and 15D, 30D, 45D, 60D, 180D, CustomD formula returns for a scheme under the requested plan
    */
-  async computeReturnsForScheme(scheme, plan = 'regular') {
+  async computeReturnsForScheme(scheme, plan = 'regular', customDays = 33, startDate = null, endDate = null) {
     const isDirect = plan.toLowerCase() === 'direct';
     const schemeCode = isDirect ? scheme.directSchemeCode : scheme.regularSchemeCode;
 
@@ -396,6 +407,13 @@ class AmfiService {
       return3Yr: null,
       return5Yr: null,
       return10Yr: null,
+      return15D: null,
+      return30D: null,
+      return45D: null,
+      return60D: null,
+      return180D: null,
+      returnCustomD: null,
+      customDays: parseInt(customDays, 10) || 33,
       currentNav: isDirect ? scheme.navDirect : scheme.navRegular,
       navDate: this.reportDate,
       planUsed: isDirect ? 'Direct' : 'Regular'
@@ -430,6 +448,7 @@ class AmfiService {
     resultReturns.currentNav = VT;
     resultReturns.navDate = latestObj.date;
 
+    // Yearly formula returns
     const periods = [
       { key: 'return1Yr', T: 1 },
       { key: 'return2Yr', T: 2 },
@@ -451,6 +470,57 @@ class AmfiService {
         resultReturns[key] = null;
       }
     });
+
+    // Day formula returns (15D, 30D, 45D, 60D, 180D)
+    const dayPeriods = [
+      { key: 'return15D', D: 15 },
+      { key: 'return30D', D: 30 },
+      { key: 'return45D', D: 45 },
+      { key: 'return60D', D: 60 },
+      { key: 'return180D', D: 180 }
+    ];
+
+    dayPeriods.forEach(({ key, D }) => {
+      const targetDate = new Date(latestDate);
+      targetDate.setDate(targetDate.getDate() - D);
+      const v0Record = navList.find(item => parseNavDate(item.date) <= targetDate);
+      if (v0Record) {
+        const V0 = Number(v0Record.nav);
+        resultReturns[key] = calculateDayFormulaReturn(V0, VT, D);
+      } else {
+        resultReturns[key] = null;
+      }
+    });
+
+    // Custom Period formula return (e.g. 33 days or calendar range)
+    let cDays = parseInt(customDays, 10) || 33;
+
+    if (startDate && endDate) {
+      const sDate = parseNavDate(startDate);
+      const eDate = parseNavDate(endDate);
+      if (!isNaN(sDate.getTime()) && !isNaN(eDate.getTime()) && eDate > sDate) {
+        const diffMs = eDate.getTime() - sDate.getTime();
+        cDays = Math.max(1, Math.round(diffMs / (1000 * 60 * 60 * 24)));
+
+        const vtRecord = navList.find(item => parseNavDate(item.date) <= eDate) || latestObj;
+        const v0Record = navList.find(item => parseNavDate(item.date) <= sDate);
+
+        if (vtRecord && v0Record) {
+          const VT_custom = Number(vtRecord.nav);
+          const V0_custom = Number(v0Record.nav);
+          resultReturns.returnCustomD = calculateDayFormulaReturn(V0_custom, VT_custom, cDays);
+        }
+      }
+    } else {
+      const targetCustomDate = new Date(latestDate);
+      targetCustomDate.setDate(targetCustomDate.getDate() - cDays);
+      const v0Record = navList.find(item => parseNavDate(item.date) <= targetCustomDate);
+      if (v0Record) {
+        const V0 = Number(v0Record.nav);
+        resultReturns.returnCustomD = calculateDayFormulaReturn(V0, VT, cDays);
+      }
+    }
+    resultReturns.customDays = cDays;
 
     return resultReturns;
   }
@@ -486,7 +556,7 @@ class AmfiService {
   /**
    * Get filtered and paginated schemes with calculated returns
    */
-  async getFunds({ category = 'all', search = '', plan = 'regular', page = 1, limit = 50 }) {
+  async getFunds({ category = 'all', search = '', plan = 'regular', page = 1, limit = 50, customDays = 33, startDate = null, endDate = null }) {
     await this.initializeMasterRegistry();
 
     let filtered = [...this.masterSchemes];
@@ -521,7 +591,7 @@ class AmfiService {
     // Compute returns for current page items asynchronously
     const fundsWithReturns = await Promise.all(
       pageItems.map(async (scheme) => {
-        const computed = await this.computeReturnsForScheme(scheme, plan);
+        const computed = await this.computeReturnsForScheme(scheme, plan, customDays, startDate, endDate);
         return {
           id: scheme.id,
           displayName: scheme.displayName,
@@ -541,6 +611,13 @@ class AmfiService {
           return3Yr: computed.return3Yr,
           return5Yr: computed.return5Yr,
           return10Yr: computed.return10Yr,
+          return15D: computed.return15D,
+          return30D: computed.return30D,
+          return45D: computed.return45D,
+          return60D: computed.return60D,
+          return180D: computed.return180D,
+          returnCustomD: computed.returnCustomD,
+          customDays: computed.customDays,
           regularSchemeCode: scheme.regularSchemeCode,
           directSchemeCode: scheme.directSchemeCode
         };
@@ -561,7 +638,7 @@ class AmfiService {
   /**
    * Get Batch Funds for Custom Fund List (grouped category-wise and sorted alphabetically)
    */
-  async getBatchFunds({ ids = [], plan = 'regular' }) {
+  async getBatchFunds({ ids = [], plan = 'regular', customDays = 33, startDate = null, endDate = null }) {
     await this.initializeMasterRegistry();
 
     if (!ids || ids.length === 0) {
@@ -575,7 +652,7 @@ class AmfiService {
     // Compute returns for selected funds
     const fundsWithReturns = await Promise.all(
       matchedSchemes.map(async (scheme) => {
-        const computed = await this.computeReturnsForScheme(scheme, plan);
+        const computed = await this.computeReturnsForScheme(scheme, plan, customDays, startDate, endDate);
         return {
           id: scheme.id,
           displayName: scheme.displayName,
@@ -594,7 +671,14 @@ class AmfiService {
           return2Yr: computed.return2Yr,
           return3Yr: computed.return3Yr,
           return5Yr: computed.return5Yr,
-          return10Yr: computed.return10Yr
+          return10Yr: computed.return10Yr,
+          return15D: computed.return15D,
+          return30D: computed.return30D,
+          return45D: computed.return45D,
+          return60D: computed.return60D,
+          return180D: computed.return180D,
+          returnCustomD: computed.returnCustomD,
+          customDays: computed.customDays
         };
       })
     );

@@ -4,6 +4,7 @@ import SummaryCards from './components/SummaryCards';
 import CategoryFilter from './components/CategoryFilter';
 import FundTable from './components/FundTable';
 import CustomFundList from './components/CustomFundList';
+import DayDatePicker from './components/DayDatePicker';
 import FundDetailModal from './components/FundDetailModal';
 import DisclaimerFooter from './components/DisclaimerFooter';
 import { fetchFunds, fetchBatchFunds, triggerRefresh } from './services/api';
@@ -14,10 +15,16 @@ const LOCAL_STORAGE_KEY = 'fundpulse_custom_fund_ids';
 export function App() {
   // Navigation & View State
   const [activeTab, setActiveTab] = useState('all'); // 'all' | 'custom'
+  const [mode, setMode] = useState('yearly'); // 'yearly' | 'days'
   const [selectedPlan, setSelectedPlan] = useState('regular'); // 'regular' | 'direct'
   const [activeCategory, setActiveCategory] = useState('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [page, setPage] = useState(1);
+
+  // Custom Day Period State (defaults to 33 days as requested by user)
+  const [customDays, setCustomDays] = useState(33);
+  const [startDate, setStartDate] = useState('');
+  const [endDate, setEndDate] = useState('');
 
   // Data State
   const [funds, setFunds] = useState([]);
@@ -61,7 +68,15 @@ export function App() {
   }, [selectedFundIds]);
 
   // Load Main Paginated Schemes
-  const loadFunds = useCallback(async (cat = activeCategory, query = searchQuery, plan = selectedPlan, p = page) => {
+  const loadFunds = useCallback(async (
+    cat = activeCategory,
+    query = searchQuery,
+    plan = selectedPlan,
+    p = page,
+    cDays = customDays,
+    sDate = startDate,
+    eDate = endDate
+  ) => {
     setIsLoading(true);
     setError(null);
     try {
@@ -70,7 +85,10 @@ export function App() {
         search: query,
         plan,
         page: p,
-        limit: 50
+        limit: 50,
+        customDays: cDays,
+        startDate: sDate,
+        endDate: eDate
       });
 
       setFunds(res.data.funds || []);
@@ -88,10 +106,16 @@ export function App() {
     } finally {
       setIsLoading(false);
     }
-  }, [activeCategory, searchQuery, selectedPlan, page]);
+  }, [activeCategory, searchQuery, selectedPlan, page, customDays, startDate, endDate]);
 
   // Load Batch Schemes for Custom Fund List
-  const loadCustomFunds = useCallback(async (idsSet = selectedFundIds, plan = selectedPlan) => {
+  const loadCustomFunds = useCallback(async (
+    idsSet = selectedFundIds,
+    plan = selectedPlan,
+    cDays = customDays,
+    sDate = startDate,
+    eDate = endDate
+  ) => {
     if (!idsSet || idsSet.size === 0) {
       setCustomFunds([]);
       return;
@@ -101,7 +125,10 @@ export function App() {
     try {
       const res = await fetchBatchFunds({
         ids: Array.from(idsSet),
-        plan
+        plan,
+        customDays: cDays,
+        startDate: sDate,
+        endDate: eDate
       });
       setCustomFunds(res.data.funds || []);
     } catch (err) {
@@ -109,18 +136,28 @@ export function App() {
     } finally {
       setIsCustomLoading(false);
     }
-  }, [selectedFundIds, selectedPlan]);
+  }, [selectedFundIds, selectedPlan, customDays, startDate, endDate]);
 
   // Initial Load & Effect triggers
   useEffect(() => {
-    loadFunds(activeCategory, searchQuery, selectedPlan, page);
-  }, [activeCategory, searchQuery, selectedPlan, page, loadFunds]);
+    loadFunds(activeCategory, searchQuery, selectedPlan, page, customDays, startDate, endDate);
+  }, [activeCategory, searchQuery, selectedPlan, page, customDays, startDate, endDate, loadFunds]);
 
   useEffect(() => {
     if (activeTab === 'custom') {
-      loadCustomFunds(selectedFundIds, selectedPlan);
+      loadCustomFunds(selectedFundIds, selectedPlan, customDays, startDate, endDate);
     }
-  }, [activeTab, selectedFundIds, selectedPlan, loadCustomFunds]);
+  }, [activeTab, selectedFundIds, selectedPlan, customDays, startDate, endDate, loadCustomFunds]);
+
+  const handleApplyCustomPeriod = ({ customDays: d, startDate: s, endDate: e }) => {
+    setCustomDays(d);
+    setStartDate(s);
+    setEndDate(e);
+    loadFunds(activeCategory, searchQuery, selectedPlan, page, d, s, e);
+    if (selectedFundIds.size > 0) {
+      loadCustomFunds(selectedFundIds, selectedPlan, d, s, e);
+    }
+  };
 
   // Checkbox Handlers
   const handleToggleSelectFund = (id) => {
@@ -167,9 +204,9 @@ export function App() {
     setIsRefreshing(true);
     try {
       await triggerRefresh();
-      await loadFunds(activeCategory, searchQuery, selectedPlan, page);
+      await loadFunds(activeCategory, searchQuery, selectedPlan, page, customDays, startDate, endDate);
       if (selectedFundIds.size > 0) {
-        await loadCustomFunds(selectedFundIds, selectedPlan);
+        await loadCustomFunds(selectedFundIds, selectedPlan, customDays, startDate, endDate);
       }
     } catch (err) {
       setError(err.message || 'Failed to refresh AMFI data.');
@@ -191,13 +228,15 @@ export function App() {
   return (
     <div className="min-h-screen flex flex-col bg-slate-950 text-slate-100 font-sans antialiased">
       
-      {/* Header Bar */}
+      {/* Header Bar with Mode Toggle */}
       <Header 
         onRefresh={handleManualRefresh} 
         isRefreshing={isRefreshing} 
         meta={meta}
         activeTab={activeTab}
         onSelectTab={(tab) => setActiveTab(tab)}
+        mode={mode}
+        onSelectMode={(m) => setMode(m)}
         selectedPlan={selectedPlan}
         onSelectPlan={(plan) => setSelectedPlan(plan)}
         selectedCount={selectedFundIds.size}
@@ -212,7 +251,7 @@ export function App() {
             <h3 className="text-lg font-bold text-white">AMFI Data Unavailable</h3>
             <p className="text-xs text-rose-200/80 max-w-md mx-auto">{error}</p>
             <button
-              onClick={() => loadFunds(activeCategory, searchQuery, selectedPlan, page)}
+              onClick={() => loadFunds(activeCategory, searchQuery, selectedPlan, page, customDays, startDate, endDate)}
               className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white text-xs font-semibold shadow-lg transition-all"
             >
               <RefreshCw className="h-3.5 w-3.5" /> Retry Fetching AMFI Data
@@ -222,6 +261,17 @@ export function App() {
 
         {/* Summary Dashboard Cards */}
         <SummaryCards meta={meta} totalFundsCount={totalFunds || 10195} />
+
+        {/* Day Calculation Calendar Range Bar (Visible when mode === 'days') */}
+        {mode === 'days' && (
+          <DayDatePicker
+            customDays={customDays}
+            startDate={startDate}
+            endDate={endDate}
+            onApplyCustomPeriod={handleApplyCustomPeriod}
+            meta={meta}
+          />
+        )}
 
         {/* Tab 1: All Schemes View */}
         {activeTab === 'all' && (
@@ -246,6 +296,8 @@ export function App() {
               totalPages={totalPages}
               onPageChange={(p) => setPage(p)}
               isLoading={isLoading}
+              mode={mode}
+              customDays={customDays}
               selectedPlan={selectedPlan}
               selectedFundIds={selectedFundIds}
               onToggleSelectFund={handleToggleSelectFund}
@@ -266,6 +318,8 @@ export function App() {
           <CustomFundList
             funds={customFunds}
             isLoading={isCustomLoading}
+            mode={mode}
+            customDays={customDays}
             selectedPlan={selectedPlan}
             onRemoveFund={handleRemoveFund}
             onClearAll={handleClearAll}
@@ -283,9 +337,6 @@ export function App() {
           onClose={() => setSelectedFundModal(null)}
         />
       )}
-
-      {/* Footer Disclaimer */}
-      <DisclaimerFooter />
 
     </div>
   );

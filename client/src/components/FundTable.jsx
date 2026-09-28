@@ -8,6 +8,8 @@ const FundTable = ({
   totalPages = 1,
   onPageChange,
   isLoading = false,
+  mode = 'yearly',
+  customDays = 33,
   selectedPlan = 'regular',
   selectedFundIds = new Set(),
   onToggleSelectFund,
@@ -120,7 +122,7 @@ const FundTable = ({
 
         <div className="flex items-center gap-3 w-full sm:w-auto justify-between sm:justify-end">
           <div className="text-xs text-slate-400 font-medium">
-            Total Schemes: <span className="text-white font-bold">{totalFunds.toLocaleString('en-IN')}</span> | Showing <span className="text-brand-400 font-bold">{selectedPlan.toUpperCase()}</span> Plan
+            Total Schemes: <span className="text-white font-bold">{totalFunds.toLocaleString('en-IN')}</span> | Showing <span className="text-brand-400 font-bold">{selectedPlan.toUpperCase()}</span> Plan ({mode === 'days' ? 'Day Returns' : 'Yearly Returns'})
           </div>
         </div>
       </div>
@@ -172,55 +174,122 @@ const FundTable = ({
                   </div>
                 </th>
 
-                <th 
-                  onClick={() => handleSort('return1Yr')} 
-                  className="p-3.5 cursor-pointer hover:text-white transition-colors group select-none min-w-[90px]"
-                >
-                  <div className="flex items-center gap-1.5">
-                    <span>1 Yr (%)</span>
-                    {renderSortIcon('return1Yr')}
-                  </div>
-                </th>
+                {/* Conditional Dynamic Headers: Yearly vs Day Calculation */}
+                {mode === 'yearly' ? (
+                  <>
+                    <th 
+                      onClick={() => handleSort('return1Yr')} 
+                      className="p-3.5 cursor-pointer hover:text-white transition-colors group select-none min-w-[90px]"
+                    >
+                      <div className="flex items-center gap-1.5">
+                        <span>1 Yr (%)</span>
+                        {renderSortIcon('return1Yr')}
+                      </div>
+                    </th>
 
-                <th 
-                  onClick={() => handleSort('return2Yr')} 
-                  className="p-3.5 cursor-pointer hover:text-white transition-colors group select-none min-w-[90px]"
-                >
-                  <div className="flex items-center gap-1.5">
-                    <span>2 Yr (%)</span>
-                    {renderSortIcon('return2Yr')}
-                  </div>
-                </th>
+                    <th 
+                      onClick={() => handleSort('return2Yr')} 
+                      className="p-3.5 cursor-pointer hover:text-white transition-colors group select-none min-w-[90px]"
+                    >
+                      <div className="flex items-center gap-1.5">
+                        <span>2 Yr (%)</span>
+                        {renderSortIcon('return2Yr')}
+                      </div>
+                    </th>
 
-                <th 
-                  onClick={() => handleSort('return3Yr')} 
-                  className="p-3.5 cursor-pointer hover:text-white transition-colors group select-none min-w-[90px]"
-                >
-                  <div className="flex items-center gap-1.5">
-                    <span>3 Yr (%)</span>
-                    {renderSortIcon('return3Yr')}
-                  </div>
-                </th>
+                    <th 
+                      onClick={() => handleSort('return3Yr')} 
+                      className="p-3.5 cursor-pointer hover:text-white transition-colors group select-none min-w-[90px]"
+                    >
+                      <div className="flex items-center gap-1.5">
+                        <span>3 Yr (%)</span>
+                        {renderSortIcon('return3Yr')}
+                      </div>
+                    </th>
 
-                <th 
-                  onClick={() => handleSort('return5Yr')} 
-                  className="p-3.5 cursor-pointer hover:text-white transition-colors group select-none min-w-[90px]"
-                >
-                  <div className="flex items-center gap-1.5">
-                    <span>5 Yr (%)</span>
-                    {renderSortIcon('return5Yr')}
-                  </div>
-                </th>
+                    <th 
+                      onClick={() => handleSort('return5Yr')} 
+                      className="p-3.5 cursor-pointer hover:text-white transition-colors group select-none min-w-[90px]"
+                    >
+                      <div className="flex items-center gap-1.5">
+                        <span>5 Yr (%)</span>
+                        {renderSortIcon('return5Yr')}
+                      </div>
+                    </th>
 
-                <th 
-                  onClick={() => handleSort('return10Yr')} 
-                  className="p-3.5 cursor-pointer hover:text-white transition-colors group select-none min-w-[90px]"
-                >
-                  <div className="flex items-center gap-1.5">
-                    <span>10 Yr (%)</span>
-                    {renderSortIcon('return10Yr')}
-                  </div>
-                </th>
+                    <th 
+                      onClick={() => handleSort('return10Yr')} 
+                      className="p-3.5 cursor-pointer hover:text-white transition-colors group select-none min-w-[90px]"
+                    >
+                      <div className="flex items-center gap-1.5">
+                        <span>10 Yr (%)</span>
+                        {renderSortIcon('return10Yr')}
+                      </div>
+                    </th>
+                  </>
+                ) : (
+                  <>
+                    <th 
+                      onClick={() => handleSort('return15D')} 
+                      className="p-3.5 cursor-pointer hover:text-white transition-colors group select-none min-w-[90px]"
+                    >
+                      <div className="flex items-center gap-1.5">
+                        <span>15 Days (%)</span>
+                        {renderSortIcon('return15D')}
+                      </div>
+                    </th>
+
+                    <th 
+                      onClick={() => handleSort('return30D')} 
+                      className="p-3.5 cursor-pointer hover:text-white transition-colors group select-none min-w-[90px]"
+                    >
+                      <div className="flex items-center gap-1.5">
+                        <span>30 Days (%)</span>
+                        {renderSortIcon('return30D')}
+                      </div>
+                    </th>
+
+                    <th 
+                      onClick={() => handleSort('return45D')} 
+                      className="p-3.5 cursor-pointer hover:text-white transition-colors group select-none min-w-[90px]"
+                    >
+                      <div className="flex items-center gap-1.5">
+                        <span>45 Days (%)</span>
+                        {renderSortIcon('return45D')}
+                      </div>
+                    </th>
+
+                    <th 
+                      onClick={() => handleSort('return60D')} 
+                      className="p-3.5 cursor-pointer hover:text-white transition-colors group select-none min-w-[90px]"
+                    >
+                      <div className="flex items-center gap-1.5">
+                        <span>60 Days (%)</span>
+                        {renderSortIcon('return60D')}
+                      </div>
+                    </th>
+
+                    <th 
+                      onClick={() => handleSort('return180D')} 
+                      className="p-3.5 cursor-pointer hover:text-white transition-colors group select-none min-w-[95px]"
+                    >
+                      <div className="flex items-center gap-1.5">
+                        <span>180 Days (%)</span>
+                        {renderSortIcon('return180D')}
+                      </div>
+                    </th>
+
+                    <th 
+                      onClick={() => handleSort('returnCustomD')} 
+                      className="p-3.5 cursor-pointer hover:text-white transition-colors group select-none min-w-[110px] bg-brand-500/10 text-brand-300"
+                    >
+                      <div className="flex items-center gap-1.5">
+                        <span>{customDays} Days (%)</span>
+                        {renderSortIcon('returnCustomD')}
+                      </div>
+                    </th>
+                  </>
+                )}
 
                 <th 
                   onClick={() => handleSort('dailyAUMRaw')} 
@@ -257,7 +326,7 @@ const FundTable = ({
                 ))
               ) : sortedFunds.length === 0 ? (
                 <tr>
-                  <td colSpan="12" className="p-12 text-center text-slate-400">
+                  <td colSpan="13" className="p-12 text-center text-slate-400">
                     <div className="flex flex-col items-center justify-center gap-2">
                       <AlertCircle className="h-8 w-8 text-slate-500" />
                       <p className="text-sm font-semibold text-slate-300">No matching schemes found</p>
@@ -314,30 +383,56 @@ const FundTable = ({
                         {formatNav(fund.currentNav)}
                       </td>
 
-                      {/* 1Y Return */}
-                      <td className="p-3.5 whitespace-nowrap font-mono text-[11px]">
-                        {formatPct(fund.return1Yr)}
-                      </td>
+                      {/* Dynamic Return Columns depending on mode */}
+                      {mode === 'yearly' ? (
+                        <>
+                          <td className="p-3.5 whitespace-nowrap font-mono text-[11px]">
+                            {formatPct(fund.return1Yr)}
+                          </td>
 
-                      {/* 2Y Return */}
-                      <td className="p-3.5 whitespace-nowrap font-mono text-[11px]">
-                        {formatPct(fund.return2Yr)}
-                      </td>
+                          <td className="p-3.5 whitespace-nowrap font-mono text-[11px]">
+                            {formatPct(fund.return2Yr)}
+                          </td>
 
-                      {/* 3Y Return */}
-                      <td className="p-3.5 whitespace-nowrap font-mono text-[11px]">
-                        {formatPct(fund.return3Yr)}
-                      </td>
+                          <td className="p-3.5 whitespace-nowrap font-mono text-[11px]">
+                            {formatPct(fund.return3Yr)}
+                          </td>
 
-                      {/* 5Y Return */}
-                      <td className="p-3.5 whitespace-nowrap font-mono text-[11px]">
-                        {formatPct(fund.return5Yr)}
-                      </td>
+                          <td className="p-3.5 whitespace-nowrap font-mono text-[11px]">
+                            {formatPct(fund.return5Yr)}
+                          </td>
 
-                      {/* 10Y Return */}
-                      <td className="p-3.5 whitespace-nowrap font-mono text-[11px]">
-                        {formatPct(fund.return10Yr)}
-                      </td>
+                          <td className="p-3.5 whitespace-nowrap font-mono text-[11px]">
+                            {formatPct(fund.return10Yr)}
+                          </td>
+                        </>
+                      ) : (
+                        <>
+                          <td className="p-3.5 whitespace-nowrap font-mono text-[11px]">
+                            {formatPct(fund.return15D)}
+                          </td>
+
+                          <td className="p-3.5 whitespace-nowrap font-mono text-[11px]">
+                            {formatPct(fund.return30D)}
+                          </td>
+
+                          <td className="p-3.5 whitespace-nowrap font-mono text-[11px]">
+                            {formatPct(fund.return45D)}
+                          </td>
+
+                          <td className="p-3.5 whitespace-nowrap font-mono text-[11px]">
+                            {formatPct(fund.return60D)}
+                          </td>
+
+                          <td className="p-3.5 whitespace-nowrap font-mono text-[11px]">
+                            {formatPct(fund.return180D)}
+                          </td>
+
+                          <td className="p-3.5 whitespace-nowrap font-mono text-[11px] bg-brand-500/5">
+                            {formatPct(fund.returnCustomD)}
+                          </td>
+                        </>
+                      )}
 
                       {/* AUM */}
                       <td className="p-3.5 whitespace-nowrap font-semibold text-slate-200">

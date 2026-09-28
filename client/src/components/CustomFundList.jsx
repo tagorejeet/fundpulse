@@ -24,6 +24,8 @@ const CATEGORY_ORDER = {
 export const CustomFundList = ({
   funds = [],
   isLoading = false,
+  mode = 'yearly',
+  customDays = 33,
   selectedPlan = 'regular',
   onRemoveFund,
   onClearAll,
@@ -86,6 +88,8 @@ export const CustomFundList = ({
     exportCustomListToExcel({
       funds,
       plan: selectedPlan,
+      mode,
+      customDays,
       reportDate: meta?.reportDate || '28-Sep-2026'
     });
   };
@@ -107,7 +111,7 @@ export const CustomFundList = ({
               </span>
             </h2>
             <p className="text-xs text-slate-400 mt-0.5">
-              Personalized selection grouped category-wise • Showing {selectedPlan.toUpperCase()} Plan returns
+              Personalized selection grouped category-wise • Showing {selectedPlan.toUpperCase()} Plan ({mode === 'days' ? 'Day Returns' : 'Yearly Returns'})
             </p>
           </div>
         </div>
@@ -174,11 +178,24 @@ export const CustomFundList = ({
                     <tr>
                       <th className="p-3 pl-4 min-w-[240px]">Scheme Name</th>
                       <th className="p-3 min-w-[100px]">Current NAV</th>
-                      <th className="p-3 min-w-[90px]">1 Yr (%)</th>
-                      <th className="p-3 min-w-[90px]">2 Yr (%)</th>
-                      <th className="p-3 min-w-[90px]">3 Yr (%)</th>
-                      <th className="p-3 min-w-[90px]">5 Yr (%)</th>
-                      <th className="p-3 min-w-[90px]">10 Yr (%)</th>
+                      {mode === 'yearly' ? (
+                        <>
+                          <th className="p-3 min-w-[90px]">1 Yr (%)</th>
+                          <th className="p-3 min-w-[90px]">2 Yr (%)</th>
+                          <th className="p-3 min-w-[90px]">3 Yr (%)</th>
+                          <th className="p-3 min-w-[90px]">5 Yr (%)</th>
+                          <th className="p-3 min-w-[90px]">10 Yr (%)</th>
+                        </>
+                      ) : (
+                        <>
+                          <th className="p-3 min-w-[90px]">15 Days (%)</th>
+                          <th className="p-3 min-w-[90px]">30 Days (%)</th>
+                          <th className="p-3 min-w-[90px]">45 Days (%)</th>
+                          <th className="p-3 min-w-[90px]">60 Days (%)</th>
+                          <th className="p-3 min-w-[95px]">180 Days (%)</th>
+                          <th className="p-3 min-w-[110px] bg-brand-500/10 text-brand-300">{customDays} Days (%)</th>
+                        </>
+                      )}
                       <th className="p-3 min-w-[110px]">AUM (Cr)</th>
                       <th className="p-3 text-right pr-4">Action</th>
                     </tr>
@@ -205,30 +222,56 @@ export const CustomFundList = ({
                           {formatNav(fund.currentNav)}
                         </td>
 
-                        {/* 1Y Return */}
-                        <td className="p-3 font-mono text-[11px]">
-                          {formatPct(fund.return1Yr)}
-                        </td>
+                        {/* Dynamic Return Columns depending on mode */}
+                        {mode === 'yearly' ? (
+                          <>
+                            <td className="p-3 font-mono text-[11px]">
+                              {formatPct(fund.return1Yr)}
+                            </td>
 
-                        {/* 2Y Return */}
-                        <td className="p-3 font-mono text-[11px]">
-                          {formatPct(fund.return2Yr)}
-                        </td>
+                            <td className="p-3 font-mono text-[11px]">
+                              {formatPct(fund.return2Yr)}
+                            </td>
 
-                        {/* 3Y Return */}
-                        <td className="p-3 font-mono text-[11px]">
-                          {formatPct(fund.return3Yr)}
-                        </td>
+                            <td className="p-3 font-mono text-[11px]">
+                              {formatPct(fund.return3Yr)}
+                            </td>
 
-                        {/* 5Y Return */}
-                        <td className="p-3 font-mono text-[11px]">
-                          {formatPct(fund.return5Yr)}
-                        </td>
+                            <td className="p-3 font-mono text-[11px]">
+                              {formatPct(fund.return5Yr)}
+                            </td>
 
-                        {/* 10Y Return */}
-                        <td className="p-3 font-mono text-[11px]">
-                          {formatPct(fund.return10Yr)}
-                        </td>
+                            <td className="p-3 font-mono text-[11px]">
+                              {formatPct(fund.return10Yr)}
+                            </td>
+                          </>
+                        ) : (
+                          <>
+                            <td className="p-3 font-mono text-[11px]">
+                              {formatPct(fund.return15D)}
+                            </td>
+
+                            <td className="p-3 font-mono text-[11px]">
+                              {formatPct(fund.return30D)}
+                            </td>
+
+                            <td className="p-3 font-mono text-[11px]">
+                              {formatPct(fund.return45D)}
+                            </td>
+
+                            <td className="p-3 font-mono text-[11px]">
+                              {formatPct(fund.return60D)}
+                            </td>
+
+                            <td className="p-3 font-mono text-[11px]">
+                              {formatPct(fund.return180D)}
+                            </td>
+
+                            <td className="p-3 font-mono text-[11px] bg-brand-500/5 font-semibold">
+                              {formatPct(fund.returnCustomD)}
+                            </td>
+                          </>
+                        )}
 
                         {/* AUM */}
                         <td className="p-3 font-semibold text-slate-200">

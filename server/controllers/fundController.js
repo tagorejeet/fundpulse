@@ -11,14 +11,17 @@ const logger = require('../utils/logger');
  */
 const getFunds = async (req, res) => {
   try {
-    const { category, search, plan = 'regular', page = 1, limit = 50 } = req.query;
+    const { category, search, plan = 'regular', page = 1, limit = 50, customDays = 33, startDate, endDate } = req.query;
     
     const result = await amfiService.getFunds({
       category,
       search,
       plan,
       page,
-      limit
+      limit,
+      customDays,
+      startDate,
+      endDate
     });
 
     const categories = await amfiService.getCategories();
@@ -52,11 +55,14 @@ const getFunds = async (req, res) => {
  */
 const getBatchFunds = async (req, res) => {
   try {
-    const { ids = [], plan = 'regular' } = req.body;
+    const { ids = [], plan = 'regular', customDays = 33, startDate, endDate } = req.body;
 
     const result = await amfiService.getBatchFunds({
       ids,
-      plan
+      plan,
+      customDays,
+      startDate,
+      endDate
     });
 
     res.json({
@@ -85,7 +91,7 @@ const getBatchFunds = async (req, res) => {
 const getFundById = async (req, res) => {
   try {
     const { id } = req.params;
-    const { plan = 'regular' } = req.query;
+    const { plan = 'regular', customDays = 33, startDate, endDate } = req.query;
 
     const scheme = amfiService.schemeMap.get(id);
 
@@ -96,7 +102,7 @@ const getFundById = async (req, res) => {
       });
     }
 
-    const computed = await amfiService.computeReturnsForScheme(scheme, plan);
+    const computed = await amfiService.computeReturnsForScheme(scheme, plan, customDays, startDate, endDate);
 
     res.json({
       success: true,
@@ -119,7 +125,14 @@ const getFundById = async (req, res) => {
           return2Yr: computed.return2Yr,
           return3Yr: computed.return3Yr,
           return5Yr: computed.return5Yr,
-          return10Yr: computed.return10Yr
+          return10Yr: computed.return10Yr,
+          return15D: computed.return15D,
+          return30D: computed.return30D,
+          return45D: computed.return45D,
+          return60D: computed.return60D,
+          return180D: computed.return180D,
+          returnCustomD: computed.returnCustomD,
+          customDays: computed.customDays
         },
         reportDate: amfiService.reportDate,
         lastUpdated: amfiService.lastUpdated
