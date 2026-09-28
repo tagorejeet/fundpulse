@@ -1,0 +1,16 @@
+services:
+  - type: web
+    name: fundpulse
+    runtime: node
+    plan: free
+    buildCommand: npm run build
+    startCommand: npm start
+    envVars:
+      - key: PORT
+        value: 10000
+      - key: NODE_ENV
+        value: production
+      - key: AMFI_BASE_URL
+        value: https://www.amfiindia.com
+      - key: AMFI_CACHE_TTL
+        value: "3600"

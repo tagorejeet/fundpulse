@@ -25,14 +25,24 @@ app.use((req, res, next) => {
 // API Routes
 app.use('/api', apiRoutes);
 
-// Root fallback
-app.get('/', (req, res) => {
-  res.json({
-    name: 'FundPulse API',
-    description: 'Indian Mutual Fund Dashboard Proxy API',
-    trackedFunds: 34,
-    healthEndpoint: '/api/health',
-    fundsEndpoint: '/api/funds'
+// Serve static frontend files in production
+const path = require('path');
+const clientDistPath = path.join(__dirname, '../client/dist');
+app.use(express.static(clientDistPath));
+
+// SPA fallback to index.html for non-API routes
+app.get('*', (req, res, next) => {
+  if (req.path.startsWith('/api')) return next();
+  res.sendFile(path.join(clientDistPath, 'index.html'), (err) => {
+    if (err && !res.headersSent) {
+      res.json({
+        name: 'FundPulse API',
+        description: 'Indian Mutual Fund Dashboard Proxy API',
+        trackedFunds: 34,
+        healthEndpoint: '/api/health',
+        fundsEndpoint: '/api/funds'
+      });
+    }
   });
 });
 
