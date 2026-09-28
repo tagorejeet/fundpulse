@@ -3,12 +3,13 @@
  * 
  * Features:
  * 1. Complete Indian Mutual Fund scheme discovery (all categories and AMCs)
- * 2. Regular / Direct plan pairing by scheme code
- * 3. Independent formula return calculation:
+ * 2. Official AMFI Live AUM fetching & matching (sources daily AUM directly from AMFI)
+ * 3. Regular / Direct plan pairing by scheme code
+ * 4. Independent formula return calculation:
  *    Annualized Return = 4 * ((VT / V0)^(1 / (4 * T)) - 1) * 100
  *    where T = 1, 2, 3, 5, 10 years, V0 = historical NAV, VT = current NAV
- * 4. High-performance server-side caching of NAV time series
- * 5. Batch resolution for user's Custom Fund List
+ * 5. High-performance server-side caching of NAV time series
+ * 6. Batch resolution for user's Custom Fund List
  */
 
 const logger = require('../utils/logger');
@@ -36,6 +37,31 @@ function parseNavDate(dateStr) {
   }
   const parsed = new Date(str);
   return isNaN(parsed.getTime()) ? new Date(0) : parsed;
+}
+
+function formatAmfiDate(dateObj) {
+  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  const day = String(dateObj.getDate()).padStart(2, '0');
+  const month = months[dateObj.getMonth()];
+  const year = dateObj.getFullYear();
+  return `${day}-${month}-${year}`;
+}
+
+function cleanSchemeName(name) {
+  return (name || '')
+    .toLowerCase()
+    .replace(/\s*-\s*direct\s*plan\s*/g, ' ')
+    .replace(/\s*-\s*regular\s*plan\s*/g, ' ')
+    .replace(/\s*direct\s*plan\s*/g, ' ')
+    .replace(/\s*regular\s*plan\s*/g, ' ')
+    .replace(/\s*-\s*direct\s*/g, ' ')
+    .replace(/\s*-\s*regular\s*/g, ' ')
+    .replace(/\s*-\s*growth\s*option\s*/g, ' ')
+    .replace(/\s*-\s*growth\s*plan\s*/g, ' ')
+    .replace(/\s*-\s*growth\s*/g, ' ')
+    .replace(/\s*growth\s*/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
 }
 
 // User-specified formula: Annualized Return = 4 * ((VT / V0)^(1 / (4 * T)) - 1)
@@ -77,7 +103,7 @@ class AmfiService {
     this.masterSchemes = []; // Array of scheme objects
     this.schemeMap = new Map(); // id -> scheme object
     this.navHistoryCache = new Map(); // schemeCode -> { navList: [{date, nav}], timestamp }
-    this.reportDate = '28-Sep-2026';
+    this.reportDate = '25-Sep-2026';
     this.lastUpdated = new Date().toISOString();
     this.isInitialized = false;
     this.inFlightInitPromise = null;
@@ -97,7 +123,81 @@ class AmfiService {
   }
 
   /**
-   * Initialize and build the master index of all Indian Mutual Fund schemes
+   * Fetch Live AUM, Benchmarks, and Riskometers directly from official AMFI Fund Performance endpoint
+   */
+  async fetchAmfiLiveAumData() {
+    const amfiEntries = [];
+    let resolvedDate = null;
+    const today = new Date();
+    const subCats = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 12, 13, 14, 15];
+
+    // AMFI updates data around 7 PM evening. Try candidate report dates starting from yesterday.
+    for (let dayOffset = 1; dayOffset <= 5; dayOffset++) {
+      const candidateDate = new Date(today);
+      candidateDate.setDate(today.getDate() - dayOffset);
+      const dateStr = formatAmfiDate(candidateDate);
+
+      let successCount = 0;
+
+      for (const subCat of subCats) {
+        try {
+          const res = await fetch('https://www.amfiindia.com/gateway/pollingsebi/api/amfi/fundperformance', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+            },
+            body: JSON.stringify({
+              maturityType: 1,
+              category: 1,
+              subCategory: subCat,
+              mfid: 0,
+              reportDate: dateStr
+            }),
+            timeout: 3000
+          });
+
+          if (res.ok) {
+            const json = await res.json();
+            const list = json.data || [];
+            if (list.length > 0) {
+              successCount += list.length;
+              list.forEach(item => {
+                if (item.schemeName) {
+                  amfiEntries.push({
+                    rawName: item.schemeName,
+                    cleanName: cleanSchemeName(item.schemeName),
+                    dailyAUM: item.dailyAUM ? Number(item.dailyAUM) : null,
+                    benchmark: item.benchmark ? String(item.benchmark).trim() : 'N/A',
+                    riskometerScheme: item.riskometerScheme ? String(item.riskometerScheme).trim() : 'N/A',
+                    navRegular: item.navRegular ? Number(item.navRegular) : null,
+                    navDirect: item.navDirect ? Number(item.navDirect) : null
+                  });
+                }
+              });
+            }
+          }
+        } catch (err) {
+          // Silent timeout catch for subcategory fetch
+        }
+      }
+
+      if (successCount > 0) {
+        resolvedDate = dateStr;
+        logger.info(`Successfully fetched ${amfiEntries.length} live AMFI AUM entries for report date ${dateStr}!`);
+        break;
+      }
+    }
+
+    if (resolvedDate) {
+      this.reportDate = resolvedDate;
+    }
+
+    return amfiEntries;
+  }
+
+  /**
+   * Initialize and build the master index of all Indian Mutual Fund schemes with real AMFI AUM
    */
   async initializeMasterRegistry() {
     if (this.isInitialized && this.masterSchemes.length > 0) return;
@@ -111,7 +211,10 @@ class AmfiService {
       const startTime = Date.now();
 
       try {
-        // Fetch full master scheme directory from official API endpoint
+        // 1. Fetch live AMFI AUM dataset
+        const amfiList = await this.fetchAmfiLiveAumData();
+
+        // 2. Fetch full master scheme directory from official API endpoint
         const res = await fetch('https://api.mfapi.in/mf', { timeout: 15000 });
         if (!res.ok) throw new Error(`Failed to fetch master scheme list: HTTP ${res.status}`);
         const rawList = await res.json();
@@ -125,8 +228,21 @@ class AmfiService {
 
         const pairedMap = new Map();
 
-        // 1. First seed the 34 allowlist schemes to guarantee exact IDs and display names
+        // Helper to match AMFI AUM entry for a scheme
+        const findAmfiMatch = (displayName) => {
+          const sClean = cleanSchemeName(displayName);
+          return amfiList.find(a => 
+            a.cleanName === sClean || 
+            (a.cleanName.length > 5 && sClean.includes(a.cleanName)) ||
+            (sClean.length > 5 && a.cleanName.includes(sClean))
+          );
+        };
+
+        // 1. Seed the 34 allowlist schemes to guarantee exact IDs, display names, and AMFI AUM
         MASTER_ALLOWLIST.forEach(allowItem => {
+          const match = findAmfiMatch(allowItem.displayName) || findAmfiMatch(allowItem.amfiSchemeName);
+          const aumVal = match && match.dailyAUM ? match.dailyAUM : (allowItem.seedAUM || null);
+
           const item = {
             id: allowItem.id,
             displayName: allowItem.displayName,
@@ -136,12 +252,12 @@ class AmfiService {
             subCategoryId: allowItem.subCategoryId,
             regularSchemeCode: allowItem.regularSchemeCode || null,
             directSchemeCode: allowItem.directSchemeCode || null,
-            dailyAUMRaw: allowItem.seedAUM || 5000.0,
-            dailyAUMFormatted: this.formatAUM(allowItem.seedAUM || 5000.0),
-            benchmark: allowItem.seedBenchmark || 'NIFTY 500 TRI',
-            riskometerScheme: 'Very High',
-            navRegular: allowItem.seedNavReg || 100.0,
-            navDirect: allowItem.seedNavDir || 110.0,
+            dailyAUMRaw: aumVal,
+            dailyAUMFormatted: this.formatAUM(aumVal),
+            benchmark: (match && match.benchmark !== 'N/A') ? match.benchmark : (allowItem.seedBenchmark || 'NIFTY 500 TRI'),
+            riskometerScheme: (match && match.riskometerScheme !== 'N/A') ? match.riskometerScheme : 'Very High',
+            navRegular: (match && match.navRegular) ? match.navRegular : (allowItem.seedNavReg || 100.0),
+            navDirect: (match && match.navDirect) ? match.navDirect : (allowItem.seedNavDir || 110.0),
             seedReturns: allowItem.seedReturns || null
           };
           pairedMap.set(allowItem.id, item);
@@ -171,6 +287,9 @@ class AmfiService {
             const amcName = amcParts.length > 2 ? `${amcParts[0]} ${amcParts[1]} Mutual Fund` : 'Mutual Fund';
             const cat = categorizeScheme('', baseName);
 
+            const match = findAmfiMatch(baseName);
+            const aumVal = match ? match.dailyAUM : null;
+
             pairedMap.set(slugId, {
               id: slugId,
               displayName: baseName,
@@ -180,12 +299,12 @@ class AmfiService {
               subCategoryId: 0,
               regularSchemeCode: isDirect ? null : s.schemeCode,
               directSchemeCode: isDirect ? s.schemeCode : null,
-              dailyAUMRaw: 2500.0,
-              dailyAUMFormatted: '₹2,500.00 Cr',
-              benchmark: 'NIFTY 500 TRI',
-              riskometerScheme: 'Very High',
-              navRegular: 100.0,
-              navDirect: 108.5
+              dailyAUMRaw: aumVal,
+              dailyAUMFormatted: this.formatAUM(aumVal),
+              benchmark: match ? match.benchmark : 'N/A',
+              riskometerScheme: match ? match.riskometerScheme : 'N/A',
+              navRegular: null,
+              navDirect: null
             });
           } else {
             const existing = pairedMap.get(slugId);
@@ -215,8 +334,8 @@ class AmfiService {
           subCategoryId: allowItem.subCategoryId,
           regularSchemeCode: allowItem.regularSchemeCode || null,
           directSchemeCode: allowItem.directSchemeCode || null,
-          dailyAUMRaw: allowItem.seedAUM || 5000.0,
-          dailyAUMFormatted: this.formatAUM(allowItem.seedAUM || 5000.0),
+          dailyAUMRaw: allowItem.seedAUM || null,
+          dailyAUMFormatted: this.formatAUM(allowItem.seedAUM || null),
           benchmark: allowItem.seedBenchmark || 'NIFTY 500 TRI',
           riskometerScheme: 'Very High',
           navRegular: allowItem.seedNavReg || 100.0,
