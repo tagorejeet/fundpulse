@@ -10,6 +10,8 @@ const FundTable = ({
   isLoading = false,
   mode = 'yearly',
   customDays = 33,
+  startDate = '',
+  endDate = '',
   selectedPlan = 'regular',
   selectedFundIds = new Set(),
   onToggleSelectFund,
@@ -120,9 +122,14 @@ const FundTable = ({
           )}
         </div>
 
-        <div className="flex items-center gap-3 w-full sm:w-auto justify-between sm:justify-end">
+        <div className="flex items-center gap-3 w-full sm:w-auto justify-between sm:justify-end flex-wrap">
+          {mode === 'days' && startDate && endDate && (
+            <div className="px-2.5 py-1 rounded-lg bg-brand-500/10 border border-brand-500/30 text-brand-300 text-[11px] font-medium">
+              V₀ Date: <span className="font-bold text-white">{startDate}</span> → VT Date: <span className="font-bold text-white">{endDate}</span> (<span className="font-bold text-emerald-400">{customDays} Days</span>)
+            </div>
+          )}
           <div className="text-xs text-slate-400 font-medium">
-            Total Schemes: <span className="text-white font-bold">{totalFunds.toLocaleString('en-IN')}</span> | Showing <span className="text-brand-400 font-bold">{selectedPlan.toUpperCase()}</span> Plan ({mode === 'days' ? 'Day Returns' : 'Yearly Returns'})
+            Total Schemes: <span className="text-white font-bold">{totalFunds.toLocaleString('en-IN')}</span> | Showing <span className="text-brand-400 font-bold">{selectedPlan.toUpperCase()}</span> Plan
           </div>
         </div>
       </div>

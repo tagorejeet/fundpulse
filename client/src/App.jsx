@@ -22,9 +22,20 @@ export function App() {
   const [page, setPage] = useState(1);
 
   // Custom Day Period State (defaults to 33 days as requested by user)
+  const todayStr = useMemo(() => new Date().toISOString().split('T')[0], []);
+  const getDefaultStartDate = useCallback((days) => {
+    const d = new Date();
+    d.setDate(d.getDate() - days);
+    return d.toISOString().split('T')[0];
+  }, []);
+
   const [customDays, setCustomDays] = useState(33);
-  const [startDate, setStartDate] = useState('');
-  const [endDate, setEndDate] = useState('');
+  const [startDate, setStartDate] = useState(() => {
+    const d = new Date();
+    d.setDate(d.getDate() - 33);
+    return d.toISOString().split('T')[0];
+  });
+  const [endDate, setEndDate] = useState(() => new Date().toISOString().split('T')[0]);
 
   // Data State
   const [funds, setFunds] = useState([]);
@@ -259,10 +270,12 @@ export function App() {
           </div>
         )}
 
-        {/* Summary Dashboard Cards */}
-        <SummaryCards meta={meta} totalFundsCount={totalFunds || 10195} />
+        {/* Summary Dashboard Cards (Only in Yearly mode) */}
+        {mode === 'yearly' && (
+          <SummaryCards meta={meta} totalFundsCount={totalFunds || 10195} />
+        )}
 
-        {/* Day Calculation Calendar Range Bar (Visible when mode === 'days') */}
+        {/* Day Calculation Calendar Range Bar (Visible at top when mode === 'days') */}
         {mode === 'days' && (
           <DayDatePicker
             customDays={customDays}
@@ -298,6 +311,8 @@ export function App() {
               isLoading={isLoading}
               mode={mode}
               customDays={customDays}
+              startDate={startDate}
+              endDate={endDate}
               selectedPlan={selectedPlan}
               selectedFundIds={selectedFundIds}
               onToggleSelectFund={handleToggleSelectFund}
@@ -320,6 +335,8 @@ export function App() {
             isLoading={isCustomLoading}
             mode={mode}
             customDays={customDays}
+            startDate={startDate}
+            endDate={endDate}
             selectedPlan={selectedPlan}
             onRemoveFund={handleRemoveFund}
             onClearAll={handleClearAll}
