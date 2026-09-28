@@ -1,0 +1,60 @@
+/**
+ * FundPulse - Backend Server Entry Point
+ */
+
+require('dotenv').config();
+const express = require('express');
+const cors = require('cors');
+const apiRoutes = require('./routes/apiRoutes');
+const logger = require('./utils/logger');
+const amfiService = require('./services/amfiService');
+
+const app = express();
+const PORT = process.env.PORT || 5000;
+
+// Middleware
+app.use(cors());
+app.use(express.json());
+
+// Request logging middleware
+app.use((req, res, next) => {
+  logger.info(`${req.method} ${req.originalUrl} - Client: ${req.ip}`);
+  next();
+});
+
+// API Routes
+app.use('/api', apiRoutes);
+
+// Root fallback
+app.get('/', (req, res) => {
+  res.json({
+    name: 'FundPulse API',
+    description: 'Indian Mutual Fund Dashboard Proxy API',
+    trackedFunds: 34,
+    healthEndpoint: '/api/health',
+    fundsEndpoint: '/api/funds'
+  });
+});
+
+// Global error handler
+app.use((err, req, res, next) => {
+  logger.error('Unhandled server error:', err);
+  res.status(500).json({
+    success: false,
+    error: 'Internal server error',
+    message: err.message
+  });
+});
+
+// Start listening & prime initial cache
+app.listen(PORT, async () => {
+  logger.info(`FundPulse Backend Server running on port ${PORT}`);
+  logger.info(`Environment: ${process.env.NODE_ENV || 'development'}`);
+  logger.info('Priming initial AMFI data cache...');
+  try {
+    const data = await amfiService.getFunds(false);
+    logger.info(`Initial AMFI Cache Primed successfully! Date: ${data.reportDate}, Matched: ${data.matchedCount}/34 funds.`);
+  } catch (err) {
+    logger.error('Initial AMFI Cache Priming failed:', err.message);
+  }
+});
