@@ -17,12 +17,21 @@ const { MASTER_ALLOWLIST, MASTER_CATEGORIES, CATEGORY_DISPLAY_ORDER } = require(
 
 const AMFI_CACHE_TTL = parseInt(process.env.AMFI_CACHE_TTL || '3600', 10); // seconds
 
-// Parse DD-MM-YYYY or DD-MMM-YYYY or ISO date strings to Date object
+// Parse DD-MM-YYYY or DD-MMM-YYYY or ISO (YYYY-MM-DD) date strings to Date object
 function parseNavDate(dateStr) {
   if (!dateStr) return new Date(0);
   const str = String(dateStr).trim();
   const parts = str.split('-');
   if (parts.length === 3) {
+    // Handle ISO YYYY-MM-DD format
+    if (parts[0].length === 4) {
+      const year = parseInt(parts[0], 10);
+      const month = parseInt(parts[1], 10) - 1;
+      const day = parseInt(parts[2], 10);
+      return new Date(year, month, day);
+    }
+
+    // Handle DD-MM-YYYY or DD-MMM-YYYY format
     const day = parseInt(parts[0], 10);
     const monthStr = parts[1];
     const year = parseInt(parts[2], 10);
@@ -398,7 +407,7 @@ class AmfiService {
    */
   async computeReturnsForScheme(scheme, plan = 'regular', customDays = 33, startDate = null, endDate = null) {
     const isDirect = plan.toLowerCase() === 'direct';
-    const schemeCode = isDirect ? scheme.directSchemeCode : scheme.regularSchemeCode;
+    const schemeCode = (isDirect ? scheme.directSchemeCode : scheme.regularSchemeCode) || scheme.regularSchemeCode || scheme.directSchemeCode;
 
     // Default return object
     const resultReturns = {
