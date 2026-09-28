@@ -4,10 +4,13 @@
 
 const API_BASE = '/api';
 
-export const fetchFunds = async (category = 'all', search = '') => {
+export const fetchFunds = async ({ category = 'all', search = '', plan = 'regular', page = 1, limit = 50 } = {}) => {
   const params = new URLSearchParams();
   if (category && category !== 'all') params.append('category', category);
   if (search && search.trim()) params.append('search', search.trim());
+  if (plan) params.append('plan', plan);
+  if (page) params.append('page', String(page));
+  if (limit) params.append('limit', String(limit));
 
   const response = await fetch(`${API_BASE}/funds?${params.toString()}`);
   if (!response.ok) {
@@ -17,8 +20,28 @@ export const fetchFunds = async (category = 'all', search = '') => {
   return response.json();
 };
 
-export const fetchFundById = async (id) => {
-  const response = await fetch(`${API_BASE}/funds/${id}`);
+export const fetchBatchFunds = async ({ ids = [], plan = 'regular' } = {}) => {
+  if (!ids || ids.length === 0) {
+    return { success: true, data: { funds: [], total: 0 } };
+  }
+
+  const response = await fetch(`${API_BASE}/funds/batch`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({ ids, plan })
+  });
+
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(errorData.error || 'Failed to fetch custom fund list data.');
+  }
+  return response.json();
+};
+
+export const fetchFundById = async (id, plan = 'regular') => {
+  const response = await fetch(`${API_BASE}/funds/${id}?plan=${plan}`);
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({}));
     throw new Error(errorData.error || 'Failed to fetch fund details.');

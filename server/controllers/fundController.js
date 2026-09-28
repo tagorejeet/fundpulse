@@ -3,56 +3,76 @@
  */
 
 const amfiService = require('../services/amfiService');
-const { MASTER_CATEGORIES, MASTER_ALLOWLIST } = require('../config/masterList');
 const logger = require('../utils/logger');
 
 /**
  * GET /api/funds
- * Returns all 34 tracked funds, with optional category and search filters.
+ * Returns paginated schemes with optional category, search, and plan selection
  */
 const getFunds = async (req, res) => {
   try {
-    const { category, search } = req.query;
-    const data = await amfiService.getFunds(false);
+    const { category, search, plan = 'regular', page = 1, limit = 50 } = req.query;
+    
+    const result = await amfiService.getFunds({
+      category,
+      search,
+      plan,
+      page,
+      limit
+    });
 
-    let funds = [...data.funds];
-
-    // Filter by Category
-    if (category && category.trim().toLowerCase() !== 'all') {
-      const targetCat = category.trim().toLowerCase();
-      funds = funds.filter(f => f.category.toLowerCase() === targetCat);
-    }
-
-    // Filter by Search Query (Strictly within the 34 funds)
-    if (search && search.trim() !== '') {
-      const q = search.trim().toLowerCase();
-      funds = funds.filter(f => 
-        f.displayName.toLowerCase().includes(q) ||
-        f.amcName.toLowerCase().includes(q) ||
-        f.category.toLowerCase().includes(q) ||
-        (f.benchmark && f.benchmark.toLowerCase().includes(q))
-      );
-    }
+    const categories = await amfiService.getCategories();
 
     res.json({
       success: true,
       data: {
-        funds,
-        total: funds.length,
-        masterTotal: MASTER_ALLOWLIST.length,
-        reportDate: data.reportDate,
-        lastUpdated: data.lastUpdated,
-        isCached: data.isCached,
-        matchedCount: data.matchedCount,
-        unavailableCount: data.unavailableCount,
-        warning: data.warning || null
+        funds: result.funds,
+        total: result.total,
+        page: result.page,
+        limit: result.limit,
+        totalPages: result.totalPages,
+        categories,
+        reportDate: result.reportDate,
+        lastUpdated: result.lastUpdated
       }
     });
   } catch (error) {
     logger.error('Error fetching funds in controller:', error);
-    res.status(503).json({
+    res.status(500).json({
       success: false,
-      error: 'AMFI data is temporarily unavailable.',
+      error: 'Failed to retrieve mutual fund schemes.',
+      message: error.message
+    });
+  }
+};
+
+/**
+ * POST /api/funds/batch
+ * Resolves full data & calculated returns for Custom Fund List schemes
+ */
+const getBatchFunds = async (req, res) => {
+  try {
+    const { ids = [], plan = 'regular' } = req.body;
+
+    const result = await amfiService.getBatchFunds({
+      ids,
+      plan
+    });
+
+    res.json({
+      success: true,
+      data: {
+        funds: result.funds,
+        total: result.total,
+        reportDate: result.reportDate,
+        lastUpdated: result.lastUpdated
+      }
+    });
+  } catch (error) {
+    logger.error('Error fetching batch funds:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to retrieve batch fund details.',
       message: error.message
     });
   }
@@ -60,35 +80,56 @@ const getFunds = async (req, res) => {
 
 /**
  * GET /api/funds/:id
- * Returns single fund by stable internal ID
+ * Returns single fund details
  */
 const getFundById = async (req, res) => {
   try {
     const { id } = req.params;
-    const data = await amfiService.getFunds(false);
-    const fund = data.funds.find(f => f.id === id);
+    const { plan = 'regular' } = req.query;
 
-    if (!fund) {
+    const scheme = amfiService.schemeMap.get(id);
+
+    if (!scheme) {
       return res.status(404).json({
         success: false,
-        error: 'Fund not found in the master 34-fund allowlist.'
+        error: 'Fund scheme not found.'
       });
     }
+
+    const computed = await amfiService.computeReturnsForScheme(scheme, plan);
 
     res.json({
       success: true,
       data: {
-        fund,
-        reportDate: data.reportDate,
-        lastUpdated: data.lastUpdated,
-        isCached: data.isCached
+        fund: {
+          id: scheme.id,
+          displayName: scheme.displayName,
+          amfiSchemeName: scheme.amfiSchemeName,
+          category: scheme.category,
+          subCategoryId: scheme.subCategoryId,
+          amcName: scheme.amcName,
+          benchmark: scheme.benchmark,
+          riskometerScheme: scheme.riskometerScheme,
+          dailyAUMRaw: scheme.dailyAUMRaw,
+          dailyAUMFormatted: scheme.dailyAUMFormatted,
+          plan: computed.planUsed,
+          currentNav: computed.currentNav,
+          navDate: computed.navDate,
+          return1Yr: computed.return1Yr,
+          return2Yr: computed.return2Yr,
+          return3Yr: computed.return3Yr,
+          return5Yr: computed.return5Yr,
+          return10Yr: computed.return10Yr
+        },
+        reportDate: amfiService.reportDate,
+        lastUpdated: amfiService.lastUpdated
       }
     });
   } catch (error) {
     logger.error(`Error fetching fund ${req.params.id}:`, error);
-    res.status(503).json({
+    res.status(500).json({
       success: false,
-      error: 'AMFI data is temporarily unavailable.',
+      error: 'Failed to retrieve fund details.',
       message: error.message
     });
   }
@@ -96,28 +137,17 @@ const getFundById = async (req, res) => {
 
 /**
  * GET /api/categories
- * Returns list of 8 tracked categories and counts
+ * Returns list of all categories and fund counts
  */
 const getCategories = async (req, res) => {
   try {
-    const data = await amfiService.getFunds(false);
-
-    const categories = MASTER_CATEGORIES.map(cat => {
-      const count = data.funds.filter(f => f.category.toLowerCase() === cat.name.toLowerCase()).length;
-      return {
-        id: cat.id,
-        name: cat.name,
-        subCategoryId: cat.subCategoryId,
-        count
-      };
-    });
-
+    const categories = await amfiService.getCategories();
     res.json({
       success: true,
       data: {
         categories,
         totalCategories: categories.length,
-        totalFunds: data.funds.length
+        totalFunds: amfiService.masterSchemes.length
       }
     });
   } catch (error) {
@@ -131,20 +161,17 @@ const getCategories = async (req, res) => {
 
 /**
  * GET /api/health
- * Service health & AMFI connectivity check
+ * Service health check
  */
 const getHealth = async (req, res) => {
   try {
-    const cacheInfo = amfiService.cache;
     res.json({
       success: true,
       status: 'UP',
       service: 'FundPulse Backend API',
-      amfiProvider: 'AMFI India Gateway',
-      masterAllowlistCount: MASTER_ALLOWLIST.length,
-      cachedReportDate: cacheInfo ? cacheInfo.reportDate : null,
-      lastCacheUpdate: cacheInfo ? cacheInfo.lastUpdated : null,
-      matchedCount: cacheInfo ? cacheInfo.matchedCount : 0,
+      totalSchemesRegistered: amfiService.masterSchemes.length,
+      cachedReportDate: amfiService.reportDate,
+      lastCacheUpdate: amfiService.lastUpdated,
       timestamp: new Date().toISOString()
     });
   } catch (error) {
@@ -158,30 +185,29 @@ const getHealth = async (req, res) => {
 
 /**
  * POST /api/refresh
- * Force manual refresh of AMFI data
+ * Force manual refresh of AMFI data & clear NAV cache
  */
 const refreshData = async (req, res) => {
   try {
-    logger.info('Manual AMFI cache refresh requested');
-    const data = await amfiService.getFunds(true);
+    logger.info('Manual AMFI refresh requested');
+    amfiService.isInitialized = false;
+    amfiService.navHistoryCache.clear();
+    await amfiService.initializeMasterRegistry();
 
     res.json({
       success: true,
-      message: 'AMFI data successfully refreshed from source.',
+      message: 'AMFI data and NAV history successfully refreshed.',
       data: {
-        reportDate: data.reportDate,
-        lastUpdated: data.lastUpdated,
-        matchedCount: data.matchedCount,
-        unavailableCount: data.unavailableCount,
-        totalCount: data.totalCount,
-        isCached: data.isCached
+        totalSchemes: amfiService.masterSchemes.length,
+        reportDate: amfiService.reportDate,
+        lastUpdated: amfiService.lastUpdated
       }
     });
   } catch (error) {
     logger.error('Manual refresh failed:', error);
-    res.status(503).json({
+    res.status(500).json({
       success: false,
-      error: 'AMFI data is temporarily unavailable.',
+      error: 'Failed to refresh AMFI data.',
       message: error.message
     });
   }
@@ -189,6 +215,7 @@ const refreshData = async (req, res) => {
 
 module.exports = {
   getFunds,
+  getBatchFunds,
   getFundById,
   getCategories,
   getHealth,

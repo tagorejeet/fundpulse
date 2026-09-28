@@ -1,54 +1,176 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import Header from './components/Header';
 import SummaryCards from './components/SummaryCards';
 import CategoryFilter from './components/CategoryFilter';
 import FundTable from './components/FundTable';
+import CustomFundList from './components/CustomFundList';
 import FundDetailModal from './components/FundDetailModal';
 import DisclaimerFooter from './components/DisclaimerFooter';
-import { fetchFunds, triggerRefresh } from './services/api';
+import { fetchFunds, fetchBatchFunds, triggerRefresh } from './services/api';
 import { AlertTriangle, RefreshCw } from 'lucide-react';
 
+const LOCAL_STORAGE_KEY = 'fundpulse_custom_fund_ids';
+
 export function App() {
-  const [funds, setFunds] = useState([]);
-  const [meta, setMeta] = useState(null);
-  const [isLoading, setIsLoading] = useState(true);
-  const [isRefreshing, setIsRefreshing] = useState(false);
-  const [error, setError] = useState(null);
-  
+  // Navigation & View State
+  const [activeTab, setActiveTab] = useState('all'); // 'all' | 'custom'
+  const [selectedPlan, setSelectedPlan] = useState('regular'); // 'regular' | 'direct'
   const [activeCategory, setActiveCategory] = useState('all');
   const [searchQuery, setSearchQuery] = useState('');
-  const [selectedFund, setSelectedFund] = useState(null);
+  const [page, setPage] = useState(1);
 
-  const loadFunds = useCallback(async (cat = activeCategory, query = searchQuery) => {
+  // Data State
+  const [funds, setFunds] = useState([]);
+  const [customFunds, setCustomFunds] = useState([]);
+  const [totalFunds, setTotalFunds] = useState(0);
+  const [totalPages, setTotalPages] = useState(1);
+  const [categoriesList, setCategoriesList] = useState([]);
+  const [meta, setMeta] = useState(null);
+
+  // Status State
+  const [isLoading, setIsLoading] = useState(true);
+  const [isCustomLoading, setIsCustomLoading] = useState(false);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [error, setError] = useState(null);
+
+  // Selected Fund Modal State
+  const [selectedFundModal, setSelectedFundModal] = useState(null);
+
+  // Persistent Selected Custom Fund IDs (Set stored in localStorage)
+  const [selectedFundIds, setSelectedFundIds] = useState(() => {
+    try {
+      const saved = localStorage.getItem(LOCAL_STORAGE_KEY);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) return new Set(parsed);
+      }
+    } catch (e) {
+      console.error('Error loading saved custom fund selection:', e);
+    }
+    return new Set();
+  });
+
+  // Save selectedFundIds to localStorage on change
+  useEffect(() => {
+    try {
+      const arr = Array.from(selectedFundIds);
+      localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(arr));
+    } catch (e) {
+      console.error('Error saving custom fund selection:', e);
+    }
+  }, [selectedFundIds]);
+
+  // Load Main Paginated Schemes
+  const loadFunds = useCallback(async (cat = activeCategory, query = searchQuery, plan = selectedPlan, p = page) => {
     setIsLoading(true);
     setError(null);
     try {
-      const res = await fetchFunds(cat, query);
+      const res = await fetchFunds({
+        category: cat,
+        search: query,
+        plan,
+        page: p,
+        limit: 50
+      });
+
       setFunds(res.data.funds || []);
+      setTotalFunds(res.data.total || 0);
+      setTotalPages(res.data.totalPages || 1);
+      if (res.data.categories) setCategoriesList(res.data.categories);
+
       setMeta({
         reportDate: res.data.reportDate,
         lastUpdated: res.data.lastUpdated,
-        isCached: res.data.isCached,
-        matchedCount: res.data.matchedCount,
-        unavailableCount: res.data.unavailableCount,
-        warning: res.data.warning
+        isCached: res.data.isCached
       });
     } catch (err) {
       setError(err.message || 'AMFI data is temporarily unavailable.');
     } finally {
       setIsLoading(false);
     }
-  }, [activeCategory, searchQuery]);
+  }, [activeCategory, searchQuery, selectedPlan, page]);
+
+  // Load Batch Schemes for Custom Fund List
+  const loadCustomFunds = useCallback(async (idsSet = selectedFundIds, plan = selectedPlan) => {
+    if (!idsSet || idsSet.size === 0) {
+      setCustomFunds([]);
+      return;
+    }
+
+    setIsCustomLoading(true);
+    try {
+      const res = await fetchBatchFunds({
+        ids: Array.from(idsSet),
+        plan
+      });
+      setCustomFunds(res.data.funds || []);
+    } catch (err) {
+      console.error('Failed to load custom fund list details:', err);
+    } finally {
+      setIsCustomLoading(false);
+    }
+  }, [selectedFundIds, selectedPlan]);
+
+  // Initial Load & Effect triggers
+  useEffect(() => {
+    loadFunds(activeCategory, searchQuery, selectedPlan, page);
+  }, [activeCategory, searchQuery, selectedPlan, page, loadFunds]);
 
   useEffect(() => {
-    loadFunds(activeCategory, searchQuery);
-  }, [activeCategory, searchQuery, loadFunds]);
+    if (activeTab === 'custom') {
+      loadCustomFunds(selectedFundIds, selectedPlan);
+    }
+  }, [activeTab, selectedFundIds, selectedPlan, loadCustomFunds]);
+
+  // Checkbox Handlers
+  const handleToggleSelectFund = (id) => {
+    setSelectedFundIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      return next;
+    });
+  };
+
+  const handleToggleSelectAllPage = (pageFunds) => {
+    if (!pageFunds || pageFunds.length === 0) return;
+    const allSelected = pageFunds.every(f => selectedFundIds.has(f.id));
+
+    setSelectedFundIds(prev => {
+      const next = new Set(prev);
+      if (allSelected) {
+        pageFunds.forEach(f => next.delete(f.id));
+      } else {
+        pageFunds.forEach(f => next.add(f.id));
+      }
+      return next;
+    });
+  };
+
+  const handleRemoveFund = (id) => {
+    setSelectedFundIds(prev => {
+      const next = new Set(prev);
+      next.delete(id);
+      return next;
+    });
+  };
+
+  const handleClearAll = () => {
+    setSelectedFundIds(new Set());
+    setCustomFunds([]);
+  };
 
   const handleManualRefresh = async () => {
     setIsRefreshing(true);
     try {
       await triggerRefresh();
-      await loadFunds(activeCategory, searchQuery);
+      await loadFunds(activeCategory, searchQuery, selectedPlan, page);
+      if (selectedFundIds.size > 0) {
+        await loadCustomFunds(selectedFundIds, selectedPlan);
+      }
     } catch (err) {
       setError(err.message || 'Failed to refresh AMFI data.');
     } finally {
@@ -56,15 +178,15 @@ export function App() {
     }
   };
 
-  // Compute category counts for pills from currently loaded master list
-  const categoryCounts = React.useMemo(() => {
-    if (!funds) return {};
-    const counts = { 'all': 34 };
-    funds.forEach(f => {
-      counts[f.category] = (counts[f.category] || 0) + 1;
-    });
-    return counts;
-  }, [funds]);
+  const categoryCountsMap = useMemo(() => {
+    const map = {};
+    if (categoriesList) {
+      categoriesList.forEach(c => {
+        map[c.name] = c.count;
+      });
+    }
+    return map;
+  }, [categoriesList]);
 
   return (
     <div className="min-h-screen flex flex-col bg-slate-950 text-slate-100 font-sans antialiased">
@@ -73,35 +195,24 @@ export function App() {
       <Header 
         onRefresh={handleManualRefresh} 
         isRefreshing={isRefreshing} 
-        meta={meta} 
+        meta={meta}
+        activeTab={activeTab}
+        onSelectTab={(tab) => setActiveTab(tab)}
+        selectedPlan={selectedPlan}
+        onSelectPlan={(plan) => setSelectedPlan(plan)}
+        selectedCount={selectedFundIds.size}
       />
 
       {/* Main Container */}
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
         
-        {/* Banner Warning if served from stale cache or error */}
-        {meta?.warning && (
-          <div className="p-4 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs flex items-center justify-between gap-3 shadow-sm">
-            <div className="flex items-center gap-2">
-              <AlertTriangle className="h-4 w-4 shrink-0 text-amber-400" />
-              <span>{meta.warning}</span>
-            </div>
-            <button
-              onClick={handleManualRefresh}
-              className="px-2.5 py-1 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 text-amber-200 font-semibold transition-all"
-            >
-              Retry AMFI
-            </button>
-          </div>
-        )}
-
         {error && (
-          <div className="p-6 rounded-2xl bg-rose-500/10 border border-rose-500/30 text-rose-300 text-center space-y-3 my-8">
+          <div className="p-6 rounded-2xl bg-rose-500/10 border border-rose-500/30 text-rose-300 text-center space-y-3 my-4">
             <AlertTriangle className="h-10 w-10 text-rose-400 mx-auto" />
             <h3 className="text-lg font-bold text-white">AMFI Data Unavailable</h3>
             <p className="text-xs text-rose-200/80 max-w-md mx-auto">{error}</p>
             <button
-              onClick={() => loadFunds(activeCategory, searchQuery)}
+              onClick={() => loadFunds(activeCategory, searchQuery, selectedPlan, page)}
               className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white text-xs font-semibold shadow-lg transition-all"
             >
               <RefreshCw className="h-3.5 w-3.5" /> Retry Fetching AMFI Data
@@ -110,32 +221,66 @@ export function App() {
         )}
 
         {/* Summary Dashboard Cards */}
-        <SummaryCards meta={meta} totalFundsCount={funds.length} />
+        <SummaryCards meta={meta} totalFundsCount={totalFunds || 10195} />
 
-        {/* Category Navigation Tabs */}
-        <CategoryFilter
-          activeCategory={activeCategory}
-          onSelectCategory={(cat) => setActiveCategory(cat)}
-          categoryCounts={categoryCounts}
-        />
+        {/* Tab 1: All Schemes View */}
+        {activeTab === 'all' && (
+          <div className="space-y-4">
+            {/* Category Navigation Tabs */}
+            <CategoryFilter
+              activeCategory={activeCategory}
+              onSelectCategory={(cat) => {
+                setActiveCategory(cat);
+                setPage(1);
+              }}
+              categoriesList={categoriesList}
+              categoryCounts={categoryCountsMap}
+              totalSchemesCount={totalFunds}
+            />
 
-        {/* Master Fund Performance Table */}
-        <FundTable
-          funds={funds}
-          isLoading={isLoading}
-          onSelectFund={(fund) => setSelectedFund(fund)}
-          searchQuery={searchQuery}
-          setSearchQuery={setSearchQuery}
-          meta={meta}
-        />
+            {/* Main Master Fund Performance Table */}
+            <FundTable
+              funds={funds}
+              totalFunds={totalFunds}
+              page={page}
+              totalPages={totalPages}
+              onPageChange={(p) => setPage(p)}
+              isLoading={isLoading}
+              selectedPlan={selectedPlan}
+              selectedFundIds={selectedFundIds}
+              onToggleSelectFund={handleToggleSelectFund}
+              onToggleSelectAllPage={handleToggleSelectAllPage}
+              onSelectFund={(fund) => setSelectedFundModal(fund)}
+              searchQuery={searchQuery}
+              setSearchQuery={(q) => {
+                setSearchQuery(q);
+                setPage(1);
+              }}
+              meta={meta}
+            />
+          </div>
+        )}
+
+        {/* Tab 2: Custom Fund List View */}
+        {activeTab === 'custom' && (
+          <CustomFundList
+            funds={customFunds}
+            isLoading={isCustomLoading}
+            selectedPlan={selectedPlan}
+            onRemoveFund={handleRemoveFund}
+            onClearAll={handleClearAll}
+            meta={meta}
+            onSelectFund={(fund) => setSelectedFundModal(fund)}
+          />
+        )}
 
       </main>
 
       {/* Fund Details Modal */}
-      {selectedFund && (
+      {selectedFundModal && (
         <FundDetailModal
-          fund={selectedFund}
-          onClose={() => setSelectedFund(null)}
+          fund={selectedFundModal}
+          onClose={() => setSelectedFundModal(null)}
         />
       )}
 

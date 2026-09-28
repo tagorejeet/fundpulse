@@ -26,6 +26,7 @@ const apiLimiter = rateLimit({
 router.use(apiLimiter);
 
 router.get('/funds', fundController.getFunds);
+router.post('/funds/batch', fundController.getBatchFunds);
 router.get('/funds/:id', fundController.getFundById);
 router.get('/categories', fundController.getCategories);
 router.get('/health', fundController.getHealth);

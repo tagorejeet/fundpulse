@@ -1,14 +1,25 @@
 import React from 'react';
-import { Activity, RefreshCw, Sun, Moon, Database } from 'lucide-react';
+import { Activity, RefreshCw, Sun, Moon, CheckSquare, Layers } from 'lucide-react';
 import { useTheme } from '../context/ThemeContext';
 import StatusBadge from './StatusBadge';
 
-const Header = ({ onRefresh, isRefreshing, meta }) => {
+const Header = ({
+  onRefresh,
+  isRefreshing,
+  meta,
+  activeTab = 'all',
+  onSelectTab,
+  selectedPlan = 'regular',
+  onSelectPlan,
+  selectedCount = 0
+}) => {
   const { theme, toggleTheme } = useTheme();
 
   return (
     <header className="sticky top-0 z-40 w-full glass-card border-b border-slate-800/80 shadow-lg">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3.5">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3.5 space-y-3">
+        
+        {/* Top Row: Brand & System Actions */}
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
           
           {/* Logo & Brand Title */}
@@ -18,20 +29,20 @@ const Header = ({ onRefresh, isRefreshing, meta }) => {
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <h1 className="text-xl font-bold tracking-tight text-white dark:text-white light:text-slate-900">
+                <h1 className="text-xl font-bold tracking-tight text-white">
                   FundPulse
                 </h1>
                 <span className="px-2 py-0.5 text-[10px] font-bold tracking-wider uppercase rounded-md bg-brand-500/20 text-brand-400 border border-brand-500/30">
                   AMFI Tracker
                 </span>
               </div>
-              <p className="text-xs text-slate-400 dark:text-slate-400 light:text-slate-600 font-medium">
+              <p className="text-xs text-slate-400 font-medium">
                 Indian Mutual Fund Performance Dashboard
               </p>
             </div>
           </div>
 
-          {/* Right Action Bar */}
+          {/* Right Action Controls */}
           <div className="flex items-center gap-3 flex-wrap">
             {meta && (
               <StatusBadge 
@@ -69,6 +80,72 @@ const Header = ({ onRefresh, isRefreshing, meta }) => {
           </div>
 
         </div>
+
+        {/* Bottom Navigation & Controls Row */}
+        <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-1 border-t border-slate-800/40">
+          
+          {/* Main View Tabs (All Schemes vs Custom Fund List) */}
+          <div className="flex items-center p-1 bg-slate-900/90 rounded-xl border border-slate-800 w-full sm:w-auto">
+            <button
+              onClick={() => onSelectTab('all')}
+              className={`flex-1 sm:flex-none flex items-center justify-center gap-2 px-4 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                activeTab === 'all'
+                  ? 'bg-brand-600 text-white shadow-md'
+                  : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
+              }`}
+            >
+              <Layers className="h-3.5 w-3.5" />
+              <span>All Schemes</span>
+            </button>
+
+            <button
+              onClick={() => onSelectTab('custom')}
+              className={`flex-1 sm:flex-none flex items-center justify-center gap-2 px-4 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                activeTab === 'custom'
+                  ? 'bg-brand-600 text-white shadow-md'
+                  : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
+              }`}
+            >
+              <CheckSquare className="h-3.5 w-3.5" />
+              <span>Custom Fund List</span>
+              <span className={`ml-1 px-2 py-0.2 rounded-full text-[10px] font-extrabold ${
+                activeTab === 'custom' ? 'bg-white/20 text-white' : 'bg-slate-800 text-brand-400 border border-brand-500/30'
+              }`}>
+                {selectedCount}
+              </span>
+            </button>
+          </div>
+
+          {/* Regular / Direct Plan Segmented Switch */}
+          <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
+            <span className="text-xs font-semibold text-slate-400">Plan:</span>
+            <div className="flex items-center p-1 bg-slate-900/90 rounded-xl border border-slate-800">
+              <button
+                onClick={() => onSelectPlan('regular')}
+                className={`px-3 py-1 rounded-lg text-xs font-bold transition-all ${
+                  selectedPlan === 'regular'
+                    ? 'bg-indigo-600 text-white shadow-sm'
+                    : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                Regular
+              </button>
+
+              <button
+                onClick={() => onSelectPlan('direct')}
+                className={`px-3 py-1 rounded-lg text-xs font-bold transition-all ${
+                  selectedPlan === 'direct'
+                    ? 'bg-emerald-600 text-white shadow-sm'
+                    : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                Direct
+              </button>
+            </div>
+          </div>
+
+        </div>
+
       </div>
     </header>
   );

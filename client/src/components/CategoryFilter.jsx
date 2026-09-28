@@ -1,26 +1,37 @@
 import React from 'react';
 
-const CATEGORIES = [
-  { id: 'all', name: 'All Schemes', count: 34 },
-  { id: 'large-cap', name: 'Large Cap', count: 4 },
-  { id: 'mid-cap', name: 'Mid Cap', count: 4 },
-  { id: 'large-mid-cap', name: 'Large & Mid Cap', count: 3 },
-  { id: 'small-cap', name: 'Small Cap', count: 4 },
-  { id: 'multi-cap', name: 'Multi Cap', count: 5 },
-  { id: 'value', name: 'Value', count: 5 },
-  { id: 'flexi-cap', name: 'Flexi Cap', count: 5 },
-  { id: 'sectoral-thematic', name: 'Sectoral / Thematic', count: 4 }
+const DEFAULT_CATEGORIES = [
+  { id: 'all', name: 'All Schemes' },
+  { id: 'large-cap', name: 'Large Cap' },
+  { id: 'mid-cap', name: 'Mid Cap' },
+  { id: 'large-mid-cap', name: 'Large & Mid Cap' },
+  { id: 'small-cap', name: 'Small Cap' },
+  { id: 'multi-cap', name: 'Multi Cap' },
+  { id: 'value', name: 'Value' },
+  { id: 'flexi-cap', name: 'Flexi Cap' },
+  { id: 'sectoral-thematic', name: 'Sectoral / Thematic' },
+  { id: 'elss', name: 'ELSS' },
+  { id: 'contra', name: 'Contra' },
+  { id: 'dividend-yield', name: 'Dividend Yield' },
+  { id: 'focused', name: 'Focused' },
+  { id: 'index-funds', name: 'Index Funds' },
+  { id: 'hybrid', name: 'Hybrid' },
+  { id: 'debt-liquid', name: 'Debt / Liquid' }
 ];
 
-const CategoryFilter = ({ activeCategory, onSelectCategory, categoryCounts }) => {
+const CategoryFilter = ({ activeCategory, onSelectCategory, categoriesList = [], categoryCounts = {}, totalSchemesCount = 0 }) => {
+  const displayList = categoriesList && categoriesList.length > 0
+    ? [{ id: 'all', name: 'All Schemes', count: totalSchemesCount }, ...categoriesList]
+    : DEFAULT_CATEGORIES;
+
   return (
     <div className="w-full overflow-x-auto pb-2 scrollbar-none">
       <div className="flex items-center gap-2 min-w-max">
-        {CATEGORIES.map(cat => {
+        {displayList.map(cat => {
           const isSelected = activeCategory === cat.name || (activeCategory === 'all' && cat.id === 'all');
-          const count = categoryCounts[cat.name] !== undefined 
-            ? categoryCounts[cat.name] 
-            : (cat.id === 'all' ? 34 : cat.count);
+          const count = cat.count !== undefined 
+            ? cat.count 
+            : (categoryCounts[cat.name] || (cat.id === 'all' ? totalSchemesCount : 0));
 
           return (
             <button
@@ -33,11 +44,13 @@ const CategoryFilter = ({ activeCategory, onSelectCategory, categoryCounts }) =>
               }`}
             >
               <span>{cat.name}</span>
-              <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-bold ${
-                isSelected ? 'bg-white/20 text-white' : 'bg-slate-800 text-slate-400'
-              }`}>
-                {count}
-              </span>
+              {count > 0 && (
+                <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-bold ${
+                  isSelected ? 'bg-white/20 text-white' : 'bg-slate-800 text-slate-400'
+                }`}>
+                  {count}
+                </span>
+              )}
             </button>
           );
         })}
