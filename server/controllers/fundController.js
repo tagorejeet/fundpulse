@@ -11,7 +11,7 @@ const logger = require('../utils/logger');
  */
 const getFunds = async (req, res) => {
   try {
-    const { category, search, plan = 'regular', page = 1, limit = 50, customDays = 33, startDate, endDate } = req.query;
+    const { category, search, plan = 'regular', page = 1, limit = 50, days, customDays, startDate, endDate } = req.query;
     
     const result = await amfiService.getFunds({
       category,
@@ -19,7 +19,7 @@ const getFunds = async (req, res) => {
       plan,
       page,
       limit,
-      customDays,
+      days: days || customDays,
       startDate,
       endDate
     });
@@ -34,6 +34,7 @@ const getFunds = async (req, res) => {
         page: result.page,
         limit: result.limit,
         totalPages: result.totalPages,
+        customDaysList: result.customDaysList,
         categories,
         reportDate: result.reportDate,
         lastUpdated: result.lastUpdated
@@ -55,12 +56,12 @@ const getFunds = async (req, res) => {
  */
 const getBatchFunds = async (req, res) => {
   try {
-    const { ids = [], plan = 'regular', customDays = 33, startDate, endDate } = req.body;
+    const { ids = [], plan = 'regular', days, customDays, startDate, endDate } = req.body;
 
     const result = await amfiService.getBatchFunds({
       ids,
       plan,
-      customDays,
+      days: days || customDays,
       startDate,
       endDate
     });
@@ -70,6 +71,7 @@ const getBatchFunds = async (req, res) => {
       data: {
         funds: result.funds,
         total: result.total,
+        customDaysList: result.customDaysList,
         reportDate: result.reportDate,
         lastUpdated: result.lastUpdated
       }
@@ -91,7 +93,7 @@ const getBatchFunds = async (req, res) => {
 const getFundById = async (req, res) => {
   try {
     const { id } = req.params;
-    const { plan = 'regular', customDays = 33, startDate, endDate } = req.query;
+    const { plan = 'regular', days, customDays, startDate, endDate } = req.query;
 
     const scheme = amfiService.schemeMap.get(id);
 
@@ -102,7 +104,7 @@ const getFundById = async (req, res) => {
       });
     }
 
-    const computed = await amfiService.computeReturnsForScheme(scheme, plan, customDays, startDate, endDate);
+    const computed = await amfiService.computeReturnsForScheme(scheme, plan, days || customDays, startDate, endDate);
 
     res.json({
       success: true,
@@ -126,6 +128,13 @@ const getFundById = async (req, res) => {
           return3Yr: computed.return3Yr,
           return5Yr: computed.return5Yr,
           return10Yr: computed.return10Yr,
+          dayReturns: computed.dayReturns,
+          customDaysList: computed.customDaysList,
+          ...Object.fromEntries(
+            Object.keys(computed)
+              .filter(k => k.startsWith('return_'))
+              .map(k => [k, computed[k]])
+          ),
           return15D: computed.return15D,
           return30D: computed.return30D,
           return45D: computed.return45D,

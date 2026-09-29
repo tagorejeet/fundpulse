@@ -29,6 +29,7 @@ export function App() {
     return d.toISOString().split('T')[0];
   }, []);
 
+  const [customDaysList, setCustomDaysList] = useState([33, 50, 67]);
   const [customDays, setCustomDays] = useState(33);
   const [startDate, setStartDate] = useState(() => {
     const d = new Date();
@@ -84,20 +85,21 @@ export function App() {
     query = searchQuery,
     plan = selectedPlan,
     p = page,
-    cDays = customDays,
+    daysList = customDaysList,
     sDate = startDate,
     eDate = endDate
   ) => {
     setIsLoading(true);
     setError(null);
     try {
+      const formattedDays = Array.isArray(daysList) ? daysList.join(',') : String(daysList);
       const res = await fetchFunds({
         category: cat,
         search: query,
         plan,
         page: p,
         limit: 50,
-        customDays: cDays,
+        days: formattedDays,
         startDate: sDate,
         endDate: eDate
       });
@@ -117,13 +119,13 @@ export function App() {
     } finally {
       setIsLoading(false);
     }
-  }, [activeCategory, searchQuery, selectedPlan, page, customDays, startDate, endDate]);
+  }, [activeCategory, searchQuery, selectedPlan, page, customDaysList, startDate, endDate]);
 
   // Load Batch Schemes for Custom Fund List
   const loadCustomFunds = useCallback(async (
     idsSet = selectedFundIds,
     plan = selectedPlan,
-    cDays = customDays,
+    daysList = customDaysList,
     sDate = startDate,
     eDate = endDate
   ) => {
@@ -134,10 +136,11 @@ export function App() {
 
     setIsCustomLoading(true);
     try {
+      const formattedDays = Array.isArray(daysList) ? daysList.join(',') : String(daysList);
       const res = await fetchBatchFunds({
         ids: Array.from(idsSet),
         plan,
-        customDays: cDays,
+        days: formattedDays,
         startDate: sDate,
         endDate: eDate
       });
@@ -147,26 +150,29 @@ export function App() {
     } finally {
       setIsCustomLoading(false);
     }
-  }, [selectedFundIds, selectedPlan, customDays, startDate, endDate]);
+  }, [selectedFundIds, selectedPlan, customDaysList, startDate, endDate]);
 
   // Initial Load & Effect triggers
   useEffect(() => {
-    loadFunds(activeCategory, searchQuery, selectedPlan, page, customDays, startDate, endDate);
-  }, [activeCategory, searchQuery, selectedPlan, page, customDays, startDate, endDate, loadFunds]);
+    loadFunds(activeCategory, searchQuery, selectedPlan, page, customDaysList, startDate, endDate);
+  }, [activeCategory, searchQuery, selectedPlan, page, customDaysList, startDate, endDate, loadFunds]);
 
   useEffect(() => {
     if (activeTab === 'custom') {
-      loadCustomFunds(selectedFundIds, selectedPlan, customDays, startDate, endDate);
+      loadCustomFunds(selectedFundIds, selectedPlan, customDaysList, startDate, endDate);
     }
-  }, [activeTab, selectedFundIds, selectedPlan, customDays, startDate, endDate, loadCustomFunds]);
+  }, [activeTab, selectedFundIds, selectedPlan, customDaysList, startDate, endDate, loadCustomFunds]);
 
-  const handleApplyCustomPeriod = ({ customDays: d, startDate: s, endDate: e }) => {
-    setCustomDays(d);
-    setStartDate(s);
-    setEndDate(e);
-    loadFunds(activeCategory, searchQuery, selectedPlan, page, d, s, e);
+  const handleApplyCustomDays = ({ customDaysList: newDaysList, startDate: newStart, endDate: newEnd }) => {
+    const validList = (newDaysList && newDaysList.length > 0) ? newDaysList : [33, 50, 67];
+    setCustomDaysList(validList);
+    setCustomDays(validList[0] || 33);
+    if (newStart) setStartDate(newStart);
+    if (newEnd) setEndDate(newEnd);
+    setPage(1);
+    loadFunds(activeCategory, searchQuery, selectedPlan, 1, validList, newStart, newEnd);
     if (selectedFundIds.size > 0) {
-      loadCustomFunds(selectedFundIds, selectedPlan, d, s, e);
+      loadCustomFunds(selectedFundIds, selectedPlan, validList, newStart, newEnd);
     }
   };
 
@@ -278,10 +284,10 @@ export function App() {
         {/* Day Calculation Calendar Range Bar (Visible at top when mode === 'days') */}
         {mode === 'days' && (
           <DayDatePicker
-            customDays={customDays}
+            customDaysList={customDaysList}
             startDate={startDate}
             endDate={endDate}
-            onApplyCustomPeriod={handleApplyCustomPeriod}
+            onApplyCustomDays={handleApplyCustomDays}
             meta={meta}
           />
         )}
@@ -311,6 +317,7 @@ export function App() {
               isLoading={isLoading}
               mode={mode}
               customDays={customDays}
+              customDaysList={customDaysList}
               startDate={startDate}
               endDate={endDate}
               selectedPlan={selectedPlan}
@@ -335,6 +342,7 @@ export function App() {
             isLoading={isCustomLoading}
             mode={mode}
             customDays={customDays}
+            customDaysList={customDaysList}
             startDate={startDate}
             endDate={endDate}
             selectedPlan={selectedPlan}

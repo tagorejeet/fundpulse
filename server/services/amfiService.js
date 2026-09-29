@@ -95,6 +95,25 @@ function calculateDayFormulaReturn(V0, VT, D) {
   return Number(result.toFixed(2));
 }
 
+function parseDaysList(customDays) {
+  let daysList = [];
+  if (Array.isArray(customDays)) {
+    daysList = customDays.map(d => parseInt(d, 10)).filter(d => !isNaN(d) && d > 0);
+  } else if (typeof customDays === 'string') {
+    daysList = customDays
+      .split(/[\s,]+/)
+      .map(d => parseInt(d.trim(), 10))
+      .filter(d => !isNaN(d) && d > 0);
+  } else if (typeof customDays === 'number' && customDays > 0) {
+    daysList = [customDays];
+  }
+  daysList = Array.from(new Set(daysList));
+  if (daysList.length === 0) {
+    daysList = [33, 50, 67];
+  }
+  return daysList;
+}
+
 function categorizeScheme(schemeCategory, schemeName) {
   const cat = (schemeCategory || '').toLowerCase();
   const name = (schemeName || '').toLowerCase();
@@ -403,11 +422,12 @@ class AmfiService {
   }
 
   /**
-   * Calculate 1Y, 2Y, 3Y, 5Y, 10Y and 15D, 30D, 45D, 60D, 180D, CustomD formula returns for a scheme under the requested plan
+   * Calculate 1Y, 2Y, 3Y, 5Y, 10Y and custom days (e.g. 33, 50, 67, etc.) formula returns for a scheme under the requested plan
    */
-  async computeReturnsForScheme(scheme, plan = 'regular', customDays = 33, startDate = null, endDate = null) {
+  async computeReturnsForScheme(scheme, plan = 'regular', customDays = '33,50,67', startDate = null, endDate = null) {
     const isDirect = plan.toLowerCase() === 'direct';
     const schemeCode = (isDirect ? scheme.directSchemeCode : scheme.regularSchemeCode) || scheme.regularSchemeCode || scheme.directSchemeCode;
+    const daysList = parseDaysList(customDays);
 
     // Default return object
     const resultReturns = {
@@ -416,17 +436,19 @@ class AmfiService {
       return3Yr: null,
       return5Yr: null,
       return10Yr: null,
-      return15D: null,
-      return30D: null,
-      return45D: null,
-      return60D: null,
-      return180D: null,
-      returnCustomD: null,
-      customDays: parseInt(customDays, 10) || 33,
+      dayReturns: {},
+      customDaysList: daysList,
+      customDays: daysList[0] || 33,
       currentNav: isDirect ? scheme.navDirect : scheme.navRegular,
       navDate: this.reportDate,
       planUsed: isDirect ? 'Direct' : 'Regular'
     };
+
+    // Initialize all custom day returns
+    daysList.forEach(d => {
+      resultReturns[`return_${d}d`] = null;
+      resultReturns.dayReturns[d] = null;
+    });
 
     // If seed returns are available for predefined benchmark items, use as immediate fallback
     if (scheme.seedReturns) {
@@ -480,36 +502,36 @@ class AmfiService {
       }
     });
 
-    // Day formula returns (15D, 30D, 45D, 60D, 180D)
-    const dayPeriods = [
-      { key: 'return15D', D: 15 },
-      { key: 'return30D', D: 30 },
-      { key: 'return45D', D: 45 },
-      { key: 'return60D', D: 60 },
-      { key: 'return180D', D: 180 }
-    ];
-
-    dayPeriods.forEach(({ key, D }) => {
+    // Custom Days formula returns for any user-provided days (e.g. 33, 50, 67, etc.)
+    daysList.forEach((D) => {
       const targetDate = new Date(latestDate);
       targetDate.setDate(targetDate.getDate() - D);
       const v0Record = navList.find(item => parseNavDate(item.date) <= targetDate);
       if (v0Record) {
         const V0 = Number(v0Record.nav);
-        resultReturns[key] = calculateDayFormulaReturn(V0, VT, D);
+        const retVal = calculateDayFormulaReturn(V0, VT, D);
+        resultReturns[`return_${D}d`] = retVal;
+        resultReturns.dayReturns[D] = retVal;
       } else {
-        resultReturns[key] = null;
+        resultReturns[`return_${D}d`] = null;
+        resultReturns.dayReturns[D] = null;
       }
     });
 
-    // Custom Period formula return (e.g. 33 days or calendar range)
-    let cDays = parseInt(customDays, 10) || 33;
+    // Backward-compatibility aliases
+    resultReturns.return15D = resultReturns.dayReturns[15] ?? null;
+    resultReturns.return30D = resultReturns.dayReturns[30] ?? null;
+    resultReturns.return45D = resultReturns.dayReturns[45] ?? null;
+    resultReturns.return60D = resultReturns.dayReturns[60] ?? null;
+    resultReturns.return180D = resultReturns.dayReturns[180] ?? null;
+    resultReturns.returnCustomD = resultReturns.dayReturns[daysList[0]] ?? null;
 
     if (startDate && endDate) {
       const sDate = parseNavDate(startDate);
       const eDate = parseNavDate(endDate);
       if (!isNaN(sDate.getTime()) && !isNaN(eDate.getTime()) && eDate > sDate) {
         const diffMs = eDate.getTime() - sDate.getTime();
-        cDays = Math.max(1, Math.round(diffMs / (1000 * 60 * 60 * 24)));
+        const cDays = Math.max(1, Math.round(diffMs / (1000 * 60 * 60 * 24)));
 
         const vtRecord = navList.find(item => parseNavDate(item.date) <= eDate) || latestObj;
         const v0Record = navList.find(item => parseNavDate(item.date) <= sDate);
@@ -517,19 +539,11 @@ class AmfiService {
         if (vtRecord && v0Record) {
           const VT_custom = Number(vtRecord.nav);
           const V0_custom = Number(v0Record.nav);
-          resultReturns.returnCustomD = calculateDayFormulaReturn(V0_custom, VT_custom, cDays);
+          resultReturns.rangeReturn = calculateDayFormulaReturn(V0_custom, VT_custom, cDays);
+          resultReturns.rangeDays = cDays;
         }
       }
-    } else {
-      const targetCustomDate = new Date(latestDate);
-      targetCustomDate.setDate(targetCustomDate.getDate() - cDays);
-      const v0Record = navList.find(item => parseNavDate(item.date) <= targetCustomDate);
-      if (v0Record) {
-        const V0 = Number(v0Record.nav);
-        resultReturns.returnCustomD = calculateDayFormulaReturn(V0, VT, cDays);
-      }
     }
-    resultReturns.customDays = cDays;
 
     return resultReturns;
   }
@@ -565,8 +579,11 @@ class AmfiService {
   /**
    * Get filtered and paginated schemes with calculated returns
    */
-  async getFunds({ category = 'all', search = '', plan = 'regular', page = 1, limit = 50, customDays = 33, startDate = null, endDate = null }) {
+  async getFunds({ category = 'all', search = '', plan = 'regular', page = 1, limit = 50, days, customDays = '33,50,67', startDate = null, endDate = null }) {
     await this.initializeMasterRegistry();
+
+    const daysParam = days || customDays;
+    const daysList = parseDaysList(daysParam);
 
     let filtered = [...this.masterSchemes];
 
@@ -600,7 +617,7 @@ class AmfiService {
     // Compute returns for current page items asynchronously
     const fundsWithReturns = await Promise.all(
       pageItems.map(async (scheme) => {
-        const computed = await this.computeReturnsForScheme(scheme, plan, customDays, startDate, endDate);
+        const computed = await this.computeReturnsForScheme(scheme, plan, daysList, startDate, endDate);
         return {
           id: scheme.id,
           displayName: scheme.displayName,
@@ -620,6 +637,13 @@ class AmfiService {
           return3Yr: computed.return3Yr,
           return5Yr: computed.return5Yr,
           return10Yr: computed.return10Yr,
+          dayReturns: computed.dayReturns,
+          customDaysList: computed.customDaysList,
+          ...Object.fromEntries(
+            Object.keys(computed)
+              .filter(k => k.startsWith('return_'))
+              .map(k => [k, computed[k]])
+          ),
           return15D: computed.return15D,
           return30D: computed.return30D,
           return45D: computed.return45D,
@@ -639,6 +663,7 @@ class AmfiService {
       page: pageNum,
       limit: limitNum,
       totalPages,
+      customDaysList: daysList,
       reportDate: this.reportDate,
       lastUpdated: this.lastUpdated
     };
@@ -647,11 +672,14 @@ class AmfiService {
   /**
    * Get Batch Funds for Custom Fund List (grouped category-wise and sorted alphabetically)
    */
-  async getBatchFunds({ ids = [], plan = 'regular', customDays = 33, startDate = null, endDate = null }) {
+  async getBatchFunds({ ids = [], plan = 'regular', days, customDays = '33,50,67', startDate = null, endDate = null }) {
     await this.initializeMasterRegistry();
 
+    const daysParam = days || customDays;
+    const daysList = parseDaysList(daysParam);
+
     if (!ids || ids.length === 0) {
-      return { funds: [], total: 0 };
+      return { funds: [], total: 0, customDaysList: daysList };
     }
 
     const matchedSchemes = ids
@@ -661,7 +689,7 @@ class AmfiService {
     // Compute returns for selected funds
     const fundsWithReturns = await Promise.all(
       matchedSchemes.map(async (scheme) => {
-        const computed = await this.computeReturnsForScheme(scheme, plan, customDays, startDate, endDate);
+        const computed = await this.computeReturnsForScheme(scheme, plan, daysList, startDate, endDate);
         return {
           id: scheme.id,
           displayName: scheme.displayName,
@@ -681,6 +709,13 @@ class AmfiService {
           return3Yr: computed.return3Yr,
           return5Yr: computed.return5Yr,
           return10Yr: computed.return10Yr,
+          dayReturns: computed.dayReturns,
+          customDaysList: computed.customDaysList,
+          ...Object.fromEntries(
+            Object.keys(computed)
+              .filter(k => k.startsWith('return_'))
+              .map(k => [k, computed[k]])
+          ),
           return15D: computed.return15D,
           return30D: computed.return30D,
           return45D: computed.return45D,
@@ -703,6 +738,7 @@ class AmfiService {
     return {
       funds: fundsWithReturns,
       total: fundsWithReturns.length,
+      customDaysList: daysList,
       reportDate: this.reportDate,
       lastUpdated: this.lastUpdated
     };

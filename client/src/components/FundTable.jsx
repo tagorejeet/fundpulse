@@ -10,6 +10,7 @@ const FundTable = ({
   isLoading = false,
   mode = 'yearly',
   customDays = 33,
+  customDaysList = [33, 50, 67],
   startDate = '',
   endDate = '',
   selectedPlan = 'regular',
@@ -123,9 +124,12 @@ const FundTable = ({
         </div>
 
         <div className="flex items-center gap-3 w-full sm:w-auto justify-between sm:justify-end flex-wrap">
-          {mode === 'days' && startDate && endDate && (
+          {mode === 'days' && customDaysList && customDaysList.length > 0 && (
             <div className="px-2.5 py-1 rounded-lg bg-brand-500/10 border border-brand-500/30 text-brand-300 text-[11px] font-medium">
-              V₀ Date: <span className="font-bold text-white">{startDate}</span> → VT Date: <span className="font-bold text-white">{endDate}</span> (<span className="font-bold text-emerald-400">{customDays} Days</span>)
+              Day Columns: <span className="font-bold text-emerald-400">{customDaysList.join('D, ')}D</span>
+              {startDate && endDate && (
+                <span className="ml-1.5 text-slate-400 text-[10px]">({startDate} → {endDate})</span>
+              )}
             </div>
           )}
           <div className="text-xs text-slate-400 font-medium">
@@ -235,67 +239,21 @@ const FundTable = ({
                     </th>
                   </>
                 ) : (
-                  <>
-                    <th 
-                      onClick={() => handleSort('return15D')} 
-                      className="p-3.5 cursor-pointer hover:text-white transition-colors group select-none min-w-[90px]"
-                    >
-                      <div className="flex items-center gap-1.5">
-                        <span>15 Days (%)</span>
-                        {renderSortIcon('return15D')}
-                      </div>
-                    </th>
-
-                    <th 
-                      onClick={() => handleSort('return30D')} 
-                      className="p-3.5 cursor-pointer hover:text-white transition-colors group select-none min-w-[90px]"
-                    >
-                      <div className="flex items-center gap-1.5">
-                        <span>30 Days (%)</span>
-                        {renderSortIcon('return30D')}
-                      </div>
-                    </th>
-
-                    <th 
-                      onClick={() => handleSort('return45D')} 
-                      className="p-3.5 cursor-pointer hover:text-white transition-colors group select-none min-w-[90px]"
-                    >
-                      <div className="flex items-center gap-1.5">
-                        <span>45 Days (%)</span>
-                        {renderSortIcon('return45D')}
-                      </div>
-                    </th>
-
-                    <th 
-                      onClick={() => handleSort('return60D')} 
-                      className="p-3.5 cursor-pointer hover:text-white transition-colors group select-none min-w-[90px]"
-                    >
-                      <div className="flex items-center gap-1.5">
-                        <span>60 Days (%)</span>
-                        {renderSortIcon('return60D')}
-                      </div>
-                    </th>
-
-                    <th 
-                      onClick={() => handleSort('return180D')} 
-                      className="p-3.5 cursor-pointer hover:text-white transition-colors group select-none min-w-[95px]"
-                    >
-                      <div className="flex items-center gap-1.5">
-                        <span>180 Days (%)</span>
-                        {renderSortIcon('return180D')}
-                      </div>
-                    </th>
-
-                    <th 
-                      onClick={() => handleSort('returnCustomD')} 
-                      className="p-3.5 cursor-pointer hover:text-white transition-colors group select-none min-w-[110px] bg-brand-500/10 text-brand-300"
-                    >
-                      <div className="flex items-center gap-1.5">
-                        <span>{customDays} Days (%)</span>
-                        {renderSortIcon('returnCustomD')}
-                      </div>
-                    </th>
-                  </>
+                  customDaysList.map((d) => {
+                    const sortKey = `return_${d}d`;
+                    return (
+                      <th 
+                        key={d}
+                        onClick={() => handleSort(sortKey)} 
+                        className="p-3.5 cursor-pointer hover:text-white transition-colors group select-none min-w-[95px] text-center"
+                      >
+                        <div className="flex items-center justify-center gap-1.5">
+                          <span>{d} Days (%)</span>
+                          {renderSortIcon(sortKey)}
+                        </div>
+                      </th>
+                    );
+                  })
                 )}
 
                 <th 
@@ -321,11 +279,9 @@ const FundTable = ({
                     <td className="p-3.5"><div className="h-4 bg-slate-800 rounded w-48"></div></td>
                     <td className="p-3.5"><div className="h-4 bg-slate-800 rounded w-20"></div></td>
                     <td className="p-3.5"><div className="h-4 bg-slate-800 rounded w-16"></div></td>
-                    <td className="p-3.5"><div className="h-4 bg-slate-800 rounded w-14"></div></td>
-                    <td className="p-3.5"><div className="h-4 bg-slate-800 rounded w-14"></div></td>
-                    <td className="p-3.5"><div className="h-4 bg-slate-800 rounded w-14"></div></td>
-                    <td className="p-3.5"><div className="h-4 bg-slate-800 rounded w-14"></div></td>
-                    <td className="p-3.5"><div className="h-4 bg-slate-800 rounded w-14"></div></td>
+                    {Array.from({ length: mode === 'yearly' ? 5 : customDaysList.length }).map((__, j) => (
+                      <td key={j} className="p-3.5"><div className="h-4 bg-slate-800 rounded w-14 mx-auto"></div></td>
+                    ))}
                     <td className="p-3.5"><div className="h-4 bg-slate-800 rounded w-20"></div></td>
                     <td className="p-3.5"><div className="h-4 bg-slate-800 rounded w-20"></div></td>
                     <td className="p-3.5"><div className="h-4 bg-slate-800 rounded w-8 ml-auto"></div></td>
@@ -333,7 +289,7 @@ const FundTable = ({
                 ))
               ) : sortedFunds.length === 0 ? (
                 <tr>
-                  <td colSpan="13" className="p-12 text-center text-slate-400">
+                  <td colSpan={7 + (mode === 'yearly' ? 5 : customDaysList.length)} className="p-12 text-center text-slate-400">
                     <div className="flex flex-col items-center justify-center gap-2">
                       <AlertCircle className="h-8 w-8 text-slate-500" />
                       <p className="text-sm font-semibold text-slate-300">No matching schemes found</p>
@@ -414,31 +370,14 @@ const FundTable = ({
                           </td>
                         </>
                       ) : (
-                        <>
-                          <td className="p-3.5 whitespace-nowrap font-mono text-[11px]">
-                            {formatPct(fund.return15D)}
-                          </td>
-
-                          <td className="p-3.5 whitespace-nowrap font-mono text-[11px]">
-                            {formatPct(fund.return30D)}
-                          </td>
-
-                          <td className="p-3.5 whitespace-nowrap font-mono text-[11px]">
-                            {formatPct(fund.return45D)}
-                          </td>
-
-                          <td className="p-3.5 whitespace-nowrap font-mono text-[11px]">
-                            {formatPct(fund.return60D)}
-                          </td>
-
-                          <td className="p-3.5 whitespace-nowrap font-mono text-[11px]">
-                            {formatPct(fund.return180D)}
-                          </td>
-
-                          <td className="p-3.5 whitespace-nowrap font-mono text-[11px] bg-brand-500/5">
-                            {formatPct(fund.returnCustomD)}
-                          </td>
-                        </>
+                        customDaysList.map((d) => {
+                          const val = fund.dayReturns ? fund.dayReturns[d] : fund[`return_${d}d`];
+                          return (
+                            <td key={d} className="p-3.5 whitespace-nowrap font-mono text-[11px] text-center">
+                              {formatPct(val)}
+                            </td>
+                          );
+                        })
                       )}
 
                       {/* AUM */}

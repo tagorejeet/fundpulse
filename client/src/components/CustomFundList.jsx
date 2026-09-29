@@ -26,6 +26,7 @@ export const CustomFundList = ({
   isLoading = false,
   mode = 'yearly',
   customDays = 33,
+  customDaysList = [33, 50, 67],
   selectedPlan = 'regular',
   onRemoveFund,
   onClearAll,
@@ -90,6 +91,7 @@ export const CustomFundList = ({
       plan: selectedPlan,
       mode,
       customDays,
+      customDaysList,
       reportDate: meta?.reportDate || '28-Sep-2026'
     });
   };
@@ -187,14 +189,11 @@ export const CustomFundList = ({
                           <th className="p-3 min-w-[90px]">10 Yr (%)</th>
                         </>
                       ) : (
-                        <>
-                          <th className="p-3 min-w-[90px]">15 Days (%)</th>
-                          <th className="p-3 min-w-[90px]">30 Days (%)</th>
-                          <th className="p-3 min-w-[90px]">45 Days (%)</th>
-                          <th className="p-3 min-w-[90px]">60 Days (%)</th>
-                          <th className="p-3 min-w-[95px]">180 Days (%)</th>
-                          <th className="p-3 min-w-[110px] bg-brand-500/10 text-brand-300">{customDays} Days (%)</th>
-                        </>
+                        customDaysList.map((d) => (
+                          <th key={d} className="p-3 min-w-[95px] text-center font-semibold">
+                            {d} Days (%)
+                          </th>
+                        ))
                       )}
                       <th className="p-3 min-w-[110px]">AUM (Cr)</th>
                       <th className="p-3 text-right pr-4">Action</th>
@@ -246,31 +245,14 @@ export const CustomFundList = ({
                             </td>
                           </>
                         ) : (
-                          <>
-                            <td className="p-3 font-mono text-[11px]">
-                              {formatPct(fund.return15D)}
-                            </td>
-
-                            <td className="p-3 font-mono text-[11px]">
-                              {formatPct(fund.return30D)}
-                            </td>
-
-                            <td className="p-3 font-mono text-[11px]">
-                              {formatPct(fund.return45D)}
-                            </td>
-
-                            <td className="p-3 font-mono text-[11px]">
-                              {formatPct(fund.return60D)}
-                            </td>
-
-                            <td className="p-3 font-mono text-[11px]">
-                              {formatPct(fund.return180D)}
-                            </td>
-
-                            <td className="p-3 font-mono text-[11px] bg-brand-500/5 font-semibold">
-                              {formatPct(fund.returnCustomD)}
-                            </td>
-                          </>
+                          customDaysList.map((d) => {
+                            const val = fund.dayReturns ? fund.dayReturns[d] : fund[`return_${d}d`];
+                            return (
+                              <td key={d} className="p-3 font-mono text-[11px] text-center">
+                                {formatPct(val)}
+                              </td>
+                            );
+                          })
                         )}
 
                         {/* AUM */}

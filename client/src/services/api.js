@@ -4,14 +4,20 @@
 
 const API_BASE = '/api';
 
-export const fetchFunds = async ({ category = 'all', search = '', plan = 'regular', page = 1, limit = 50, customDays = 33, startDate, endDate } = {}) => {
+export const fetchFunds = async ({ category = 'all', search = '', plan = 'regular', page = 1, limit = 50, days, customDays = '33,50,67', startDate, endDate } = {}) => {
   const params = new URLSearchParams();
   if (category && category !== 'all') params.append('category', category);
   if (search && search.trim()) params.append('search', search.trim());
   if (plan) params.append('plan', plan);
   if (page) params.append('page', String(page));
   if (limit) params.append('limit', String(limit));
-  if (customDays) params.append('customDays', String(customDays));
+  
+  const rawDays = days || customDays;
+  if (rawDays) {
+    const formattedDays = Array.isArray(rawDays) ? rawDays.join(',') : String(rawDays);
+    params.append('days', formattedDays);
+    params.append('customDays', formattedDays);
+  }
   if (startDate) params.append('startDate', startDate);
   if (endDate) params.append('endDate', endDate);
 
@@ -23,17 +29,20 @@ export const fetchFunds = async ({ category = 'all', search = '', plan = 'regula
   return response.json();
 };
 
-export const fetchBatchFunds = async ({ ids = [], plan = 'regular', customDays = 33, startDate, endDate } = {}) => {
+export const fetchBatchFunds = async ({ ids = [], plan = 'regular', days, customDays = '33,50,67', startDate, endDate } = {}) => {
   if (!ids || ids.length === 0) {
     return { success: true, data: { funds: [], total: 0 } };
   }
+
+  const rawDays = days || customDays;
+  const formattedDays = Array.isArray(rawDays) ? rawDays.join(',') : String(rawDays);
 
   const response = await fetch(`${API_BASE}/funds/batch`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json'
     },
-    body: JSON.stringify({ ids, plan, customDays, startDate, endDate })
+    body: JSON.stringify({ ids, plan, days: formattedDays, customDays: formattedDays, startDate, endDate })
   });
 
   if (!response.ok) {
@@ -43,10 +52,15 @@ export const fetchBatchFunds = async ({ ids = [], plan = 'regular', customDays =
   return response.json();
 };
 
-export const fetchFundById = async (id, plan = 'regular', customDays = 33, startDate, endDate) => {
+export const fetchFundById = async (id, plan = 'regular', days, customDays = '33,50,67', startDate, endDate) => {
   const params = new URLSearchParams();
   if (plan) params.append('plan', plan);
-  if (customDays) params.append('customDays', String(customDays));
+  const rawDays = days || customDays;
+  if (rawDays) {
+    const formattedDays = Array.isArray(rawDays) ? rawDays.join(',') : String(rawDays);
+    params.append('days', formattedDays);
+    params.append('customDays', formattedDays);
+  }
   if (startDate) params.append('startDate', startDate);
   if (endDate) params.append('endDate', endDate);
 
