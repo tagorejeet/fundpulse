@@ -302,10 +302,33 @@ class AmfiService {
           pairedMap.set(allowItem.id, item);
         });
 
+        // Build code-to-item and cleanName-to-item maps for O(1) fast lookup
+        const codeToItemMap = new Map();
+        const cleanNameToItemMap = new Map();
+
+        pairedMap.forEach(item => {
+          if (item.regularSchemeCode) codeToItemMap.set(Number(item.regularSchemeCode), item);
+          if (item.directSchemeCode) codeToItemMap.set(Number(item.directSchemeCode), item);
+          if (item.displayName) cleanNameToItemMap.set(cleanSchemeName(item.displayName), item);
+          if (item.amfiSchemeName) cleanNameToItemMap.set(cleanSchemeName(item.amfiSchemeName), item);
+        });
+
         // 2. Pair remaining growth schemes dynamically across all AMCs
         growthList.forEach(s => {
           const name = s.schemeName.trim();
           const isDirect = name.toLowerCase().includes('direct');
+          const code = Number(s.schemeCode);
+
+          // Check if this scheme code already belongs to an existing item (e.g. from allowlist)
+          if (codeToItemMap.has(code)) {
+            const existing = codeToItemMap.get(code);
+            if (isDirect && !existing.directSchemeCode) {
+              existing.directSchemeCode = code;
+            } else if (!isDirect && !existing.regularSchemeCode) {
+              existing.regularSchemeCode = code;
+            }
+            return;
+          }
           
           // Generate clean base scheme name
           const baseName = name
@@ -319,8 +342,15 @@ class AmfiService {
             .trim();
 
           const slugId = baseName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+          const sClean = cleanSchemeName(baseName);
 
-          if (!pairedMap.has(slugId)) {
+          // Check if slugId or clean name matches an existing allowlist item in O(1)
+          let existing = pairedMap.get(slugId) || cleanNameToItemMap.get(sClean);
+          if (existing && !pairedMap.has(slugId)) {
+            pairedMap.set(slugId, existing);
+          }
+
+          if (!existing) {
             // Extract AMC Name from scheme prefix
             const amcParts = baseName.split(' ');
             const amcName = amcParts.length > 2 ? `${amcParts[0]} ${amcParts[1]} Mutual Fund` : 'Mutual Fund';
@@ -329,33 +359,38 @@ class AmfiService {
             const match = findAmfiMatch(baseName);
             const aumVal = match ? match.dailyAUM : null;
 
-            pairedMap.set(slugId, {
+            const newItem = {
               id: slugId,
               displayName: baseName,
               amfiSchemeName: baseName,
               amcName,
               category: cat,
               subCategoryId: 0,
-              regularSchemeCode: isDirect ? null : s.schemeCode,
-              directSchemeCode: isDirect ? s.schemeCode : null,
+              regularSchemeCode: isDirect ? null : code,
+              directSchemeCode: isDirect ? code : null,
               dailyAUMRaw: aumVal,
               dailyAUMFormatted: this.formatAUM(aumVal),
               benchmark: match ? match.benchmark : 'N/A',
               riskometerScheme: match ? match.riskometerScheme : 'N/A',
               navRegular: null,
               navDirect: null
-            });
+            };
+
+            pairedMap.set(slugId, newItem);
+            codeToItemMap.set(code, newItem);
+            cleanNameToItemMap.set(sClean, newItem);
           } else {
-            const existing = pairedMap.get(slugId);
             if (isDirect && !existing.directSchemeCode) {
-              existing.directSchemeCode = s.schemeCode;
+              existing.directSchemeCode = code;
+              codeToItemMap.set(code, existing);
             } else if (!isDirect && !existing.regularSchemeCode) {
-              existing.regularSchemeCode = s.schemeCode;
+              existing.regularSchemeCode = code;
+              codeToItemMap.set(code, existing);
             }
           }
         });
 
-        this.masterSchemes = Array.from(pairedMap.values());
+        this.masterSchemes = Array.from(new Set(pairedMap.values()));
         this.schemeMap = pairedMap;
         this.isInitialized = true;
         this.lastUpdated = new Date().toISOString();

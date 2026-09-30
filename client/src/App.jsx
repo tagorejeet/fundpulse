@@ -7,13 +7,17 @@ import CustomFundList from './components/CustomFundList';
 import DayDatePicker from './components/DayDatePicker';
 import FundDetailModal from './components/FundDetailModal';
 import DisclaimerFooter from './components/DisclaimerFooter';
+import SipCalculator from './components/SipCalculator/SipCalculator';
 import { fetchFunds, fetchBatchFunds, triggerRefresh } from './services/api';
 import { AlertTriangle, RefreshCw } from 'lucide-react';
 
 const LOCAL_STORAGE_KEY = 'fundpulse_custom_fund_ids';
 
 export function App() {
-  // Navigation & View State
+  // Top-Level Application Mode: 'analysis' (Fund Analysis) | 'sip' (SIP Calculator)
+  const [appMode, setAppMode] = useState('analysis');
+
+  // Navigation & View State (for Fund Analysis mode)
   const [activeTab, setActiveTab] = useState('all'); // 'all' | 'custom'
   const [mode, setMode] = useState('yearly'); // 'yearly' | 'days'
   const [selectedPlan, setSelectedPlan] = useState('regular'); // 'regular' | 'direct'
@@ -245,11 +249,13 @@ export function App() {
   return (
     <div className="min-h-screen flex flex-col bg-slate-950 text-slate-100 font-sans antialiased">
       
-      {/* Header Bar with Mode Toggle */}
+      {/* Header Bar with Top-Level Mode Toggle */}
       <Header 
         onRefresh={handleManualRefresh} 
         isRefreshing={isRefreshing} 
         meta={meta}
+        appMode={appMode}
+        onSelectAppMode={(m) => setAppMode(m)}
         activeTab={activeTab}
         onSelectTab={(tab) => setActiveTab(tab)}
         mode={mode}
@@ -276,81 +282,97 @@ export function App() {
           </div>
         )}
 
-        {/* Summary Dashboard Cards (Only in Yearly mode) */}
-        {mode === 'yearly' && (
-          <SummaryCards meta={meta} totalFundsCount={totalFunds || 10195} />
-        )}
-
-        {/* Day Calculation Calendar Range Bar (Visible at top when mode === 'days') */}
-        {mode === 'days' && (
-          <DayDatePicker
-            customDaysList={customDaysList}
-            startDate={startDate}
-            endDate={endDate}
-            onApplyCustomDays={handleApplyCustomDays}
+        {/* MODE 1: SIP CALCULATOR */}
+        {appMode === 'sip' && (
+          <SipCalculator
+            allFunds={funds}
+            customFundIds={selectedFundIds}
             meta={meta}
-          />
-        )}
-
-        {/* Tab 1: All Schemes View */}
-        {activeTab === 'all' && (
-          <div className="space-y-4">
-            {/* Category Navigation Tabs */}
-            <CategoryFilter
-              activeCategory={activeCategory}
-              onSelectCategory={(cat) => {
-                setActiveCategory(cat);
-                setPage(1);
-              }}
-              categoriesList={categoriesList}
-              categoryCounts={categoryCountsMap}
-              totalSchemesCount={totalFunds}
-            />
-
-            {/* Main Master Fund Performance Table */}
-            <FundTable
-              funds={funds}
-              totalFunds={totalFunds}
-              page={page}
-              totalPages={totalPages}
-              onPageChange={(p) => setPage(p)}
-              isLoading={isLoading}
-              mode={mode}
-              customDays={customDays}
-              customDaysList={customDaysList}
-              startDate={startDate}
-              endDate={endDate}
-              selectedPlan={selectedPlan}
-              selectedFundIds={selectedFundIds}
-              onToggleSelectFund={handleToggleSelectFund}
-              onToggleSelectAllPage={handleToggleSelectAllPage}
-              onSelectFund={(fund) => setSelectedFundModal(fund)}
-              searchQuery={searchQuery}
-              setSearchQuery={(q) => {
-                setSearchQuery(q);
-                setPage(1);
-              }}
-              meta={meta}
-            />
-          </div>
-        )}
-
-        {/* Tab 2: Custom Fund List View */}
-        {activeTab === 'custom' && (
-          <CustomFundList
-            funds={customFunds}
-            isLoading={isCustomLoading}
-            mode={mode}
-            customDays={customDays}
-            customDaysList={customDaysList}
-            startDate={startDate}
-            endDate={endDate}
             selectedPlan={selectedPlan}
-            onRemoveFund={handleRemoveFund}
-            onClearAll={handleClearAll}
-            meta={meta}
-            onSelectFund={(fund) => setSelectedFundModal(fund)}
+            onSelectPlan={(plan) => setSelectedPlan(plan)}
           />
+        )}
+
+        {/* MODE 2: FUND ANALYSIS (Yearly Performance / Day Calculation) */}
+        {appMode === 'analysis' && (
+          <>
+            {/* Summary Dashboard Cards (Only in Yearly mode) */}
+            {mode === 'yearly' && (
+              <SummaryCards meta={meta} totalFundsCount={totalFunds || 10195} />
+            )}
+
+            {/* Day Calculation Calendar Range Bar (Visible at top when mode === 'days') */}
+            {mode === 'days' && (
+              <DayDatePicker
+                customDaysList={customDaysList}
+                startDate={startDate}
+                endDate={endDate}
+                onApplyCustomDays={handleApplyCustomDays}
+                meta={meta}
+              />
+            )}
+
+            {/* Tab 1: All Schemes View */}
+            {activeTab === 'all' && (
+              <div className="space-y-4">
+                {/* Category Navigation Tabs */}
+                <CategoryFilter
+                  activeCategory={activeCategory}
+                  onSelectCategory={(cat) => {
+                    setActiveCategory(cat);
+                    setPage(1);
+                  }}
+                  categoriesList={categoriesList}
+                  categoryCounts={categoryCountsMap}
+                  totalSchemesCount={totalFunds}
+                />
+
+                {/* Main Master Fund Performance Table */}
+                <FundTable
+                  funds={funds}
+                  totalFunds={totalFunds}
+                  page={page}
+                  totalPages={totalPages}
+                  onPageChange={(p) => setPage(p)}
+                  isLoading={isLoading}
+                  mode={mode}
+                  customDays={customDays}
+                  customDaysList={customDaysList}
+                  startDate={startDate}
+                  endDate={endDate}
+                  selectedPlan={selectedPlan}
+                  selectedFundIds={selectedFundIds}
+                  onToggleSelectFund={handleToggleSelectFund}
+                  onToggleSelectAllPage={handleToggleSelectAllPage}
+                  onSelectFund={(fund) => setSelectedFundModal(fund)}
+                  searchQuery={searchQuery}
+                  setSearchQuery={(q) => {
+                    setSearchQuery(q);
+                    setPage(1);
+                  }}
+                  meta={meta}
+                />
+              </div>
+            )}
+
+            {/* Tab 2: Custom Fund List View */}
+            {activeTab === 'custom' && (
+              <CustomFundList
+                funds={customFunds}
+                isLoading={isCustomLoading}
+                mode={mode}
+                customDays={customDays}
+                customDaysList={customDaysList}
+                startDate={startDate}
+                endDate={endDate}
+                selectedPlan={selectedPlan}
+                onRemoveFund={handleRemoveFund}
+                onClearAll={handleClearAll}
+                meta={meta}
+                onSelectFund={(fund) => setSelectedFundModal(fund)}
+              />
+            )}
+          </>
         )}
 
       </main>
@@ -362,6 +384,9 @@ export function App() {
           onClose={() => setSelectedFundModal(null)}
         />
       )}
+
+      {/* Regulatory & Disclaimer Footer */}
+      <DisclaimerFooter reportDate={meta?.reportDate} />
 
     </div>
   );

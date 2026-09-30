@@ -101,3 +101,27 @@ export const triggerRefresh = async () => {
   }
   return response.json();
 };
+
+export const calculateSipApi = async ({ ids = [], monthlySip = 10000, calculationDate = null, sipDay = 25, plan = 'regular' } = {}) => {
+  const response = await fetch(`${API_BASE}/sip/calculate`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({ ids, monthlySip, calculationDate, sipDay, plan })
+  });
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(errorData.error || 'Failed to calculate SIP returns.');
+  }
+  return response.json();
+};
+
+export const fetchSipNavHistory = async (fundId, plan = 'regular') => {
+  const response = await fetch(`${API_BASE}/sip/nav-history/${fundId}?plan=${plan}`);
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(errorData.error || 'Failed to retrieve NAV history.');
+  }
+  return response.json();
+};
