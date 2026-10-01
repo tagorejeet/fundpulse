@@ -1,7 +1,7 @@
 import React from 'react';
-import { ShieldCheck, Layers, Calendar, CheckCircle2 } from 'lucide-react';
+import { ShieldCheck, Layers } from 'lucide-react';
 
-const SummaryCards = ({ meta, totalFundsCount = 10195 }) => {
+const SummaryCards = ({ totalFundsCount = 10195 }) => {
   const formattedTotal = (totalFundsCount || 10195).toLocaleString('en-IN');
 
   const cards = [
@@ -20,27 +20,11 @@ const SummaryCards = ({ meta, totalFundsCount = 10195 }) => {
       icon: Layers,
       color: 'from-purple-500/20 to-pink-500/20 border-purple-500/30 text-purple-400',
       iconBg: 'bg-purple-500/20 text-purple-400'
-    },
-    {
-      title: 'AMFI Report Date',
-      value: meta?.reportDate || '28-Sep-2026',
-      subtitle: meta?.isCached ? 'Served from cached snapshot' : 'Latest verified polling payload',
-      icon: Calendar,
-      color: 'from-emerald-500/20 to-teal-500/20 border-emerald-500/30 text-emerald-400',
-      iconBg: 'bg-emerald-500/20 text-emerald-400'
-    },
-    {
-      title: 'Data Integrity',
-      value: '100% Verified',
-      subtitle: 'Directly Sourced from AMFI India',
-      icon: CheckCircle2,
-      color: 'from-amber-500/20 to-orange-500/20 border-amber-500/30 text-amber-400',
-      iconBg: 'bg-amber-500/20 text-amber-400'
     }
   ];
 
   return (
-    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 my-6">
+    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 my-6">
       {cards.map((card, idx) => {
         const IconComponent = card.icon;
         return (

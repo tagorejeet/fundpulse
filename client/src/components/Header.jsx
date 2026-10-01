@@ -117,148 +117,102 @@ const Header = ({
 
         </div>
 
-        {/* Bottom Navigation & Controls Row */}
-        <div className="flex flex-col lg:flex-row items-center justify-between gap-3 pt-1 border-t border-slate-800/40">
-          
-          {appMode === 'analysis' ? (
-            <>
-              {/* Main Mode Toggle: Yearly Returns vs Day Calculation */}
-              <div className="flex items-center gap-2 w-full lg:w-auto">
-                <span className="text-xs font-semibold text-slate-400 whitespace-nowrap">Analysis:</span>
-                <div className="flex items-center p-1 bg-slate-900/90 rounded-xl border border-slate-800 w-full sm:w-auto">
+        {/* Bottom Navigation & Controls Row (Only active during Fund Analysis) */}
+        {appMode === 'analysis' && (
+          <div className="flex flex-col lg:flex-row items-center justify-between gap-3 pt-1 border-t border-slate-800/40">
+            {/* Main Mode Toggle: Yearly Returns vs Day Calculation */}
+            <div className="flex items-center gap-2 w-full lg:w-auto">
+              <span className="text-xs font-semibold text-slate-400 whitespace-nowrap">Analysis:</span>
+              <div className="flex items-center p-1 bg-slate-900/90 rounded-xl border border-slate-800 w-full sm:w-auto">
+                <button
+                  onClick={() => onSelectMode('yearly')}
+                  className={`flex-1 sm:flex-none flex items-center justify-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                    mode === 'yearly'
+                      ? 'bg-gradient-to-r from-brand-600 to-indigo-600 text-white shadow-md'
+                      : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
+                  }`}
+                >
+                  <TrendingUp className="h-3.5 w-3.5" />
+                  <span>Yearly Performance</span>
+                </button>
+
+                <button
+                  onClick={() => onSelectMode('days')}
+                  className={`flex-1 sm:flex-none flex items-center justify-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                    mode === 'days'
+                      ? 'bg-gradient-to-r from-emerald-600 to-teal-600 text-white shadow-md'
+                      : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
+                  }`}
+                >
+                  <Calendar className="h-3.5 w-3.5" />
+                  <span>Day Calculation</span>
+                </button>
+              </div>
+            </div>
+
+            {/* View Tabs (All Schemes vs Custom Fund List) */}
+            <div className="flex items-center gap-3 w-full lg:w-auto justify-between lg:justify-end">
+              <div className="flex items-center p-1 bg-slate-900/90 rounded-xl border border-slate-800 w-full sm:w-auto">
+                <button
+                  onClick={() => onSelectTab('all')}
+                  className={`flex-1 sm:flex-none flex items-center justify-center gap-2 px-4 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                    activeTab === 'all'
+                      ? 'bg-brand-600 text-white shadow-md'
+                      : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
+                  }`}
+                >
+                  <Layers className="h-3.5 w-3.5" />
+                  <span>All Schemes</span>
+                </button>
+
+                <button
+                  onClick={() => onSelectTab('custom')}
+                  className={`flex-1 sm:flex-none flex items-center justify-center gap-2 px-4 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                    activeTab === 'custom'
+                      ? 'bg-brand-600 text-white shadow-md'
+                      : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
+                  }`}
+                >
+                  <CheckSquare className="h-3.5 w-3.5" />
+                  <span>Custom Fund List</span>
+                  <span className={`ml-1 px-2 py-0.2 rounded-full text-[10px] font-extrabold ${
+                    activeTab === 'custom' ? 'bg-white/20 text-white' : 'bg-slate-800 text-brand-400 border border-brand-500/30'
+                  }`}>
+                    {selectedCount}
+                  </span>
+                </button>
+              </div>
+
+              {/* Regular / Direct Plan Segmented Switch */}
+              <div className="flex items-center gap-2 whitespace-nowrap">
+                <span className="text-xs font-semibold text-slate-400">Plan:</span>
+                <div className="flex items-center p-1 bg-slate-900/90 rounded-xl border border-slate-800">
                   <button
-                    onClick={() => onSelectMode('yearly')}
-                    className={`flex-1 sm:flex-none flex items-center justify-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all ${
-                      mode === 'yearly'
-                        ? 'bg-gradient-to-r from-brand-600 to-indigo-600 text-white shadow-md'
-                        : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
+                    onClick={() => onSelectPlan('regular')}
+                    className={`px-3 py-1 rounded-lg text-xs font-bold transition-all ${
+                      selectedPlan === 'regular'
+                        ? 'bg-indigo-600 text-white shadow-sm'
+                        : 'text-slate-400 hover:text-white'
                     }`}
                   >
-                    <TrendingUp className="h-3.5 w-3.5" />
-                    <span>Yearly Performance</span>
+                    Regular
                   </button>
 
                   <button
-                    onClick={() => onSelectMode('days')}
-                    className={`flex-1 sm:flex-none flex items-center justify-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all ${
-                      mode === 'days'
-                        ? 'bg-gradient-to-r from-emerald-600 to-teal-600 text-white shadow-md'
-                        : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
+                    onClick={() => onSelectPlan('direct')}
+                    className={`px-3 py-1 rounded-lg text-xs font-bold transition-all ${
+                      selectedPlan === 'direct'
+                        ? 'bg-emerald-600 text-white shadow-sm'
+                        : 'text-slate-400 hover:text-white'
                     }`}
                   >
-                    <Calendar className="h-3.5 w-3.5" />
-                    <span>Day Calculation</span>
+                    Direct
                   </button>
                 </div>
               </div>
-
-              {/* View Tabs (All Schemes vs Custom Fund List) */}
-              <div className="flex items-center gap-3 w-full lg:w-auto justify-between lg:justify-end">
-                <div className="flex items-center p-1 bg-slate-900/90 rounded-xl border border-slate-800 w-full sm:w-auto">
-                  <button
-                    onClick={() => onSelectTab('all')}
-                    className={`flex-1 sm:flex-none flex items-center justify-center gap-2 px-4 py-1.5 rounded-lg text-xs font-bold transition-all ${
-                      activeTab === 'all'
-                        ? 'bg-brand-600 text-white shadow-md'
-                        : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
-                    }`}
-                  >
-                    <Layers className="h-3.5 w-3.5" />
-                    <span>All Schemes</span>
-                  </button>
-
-                  <button
-                    onClick={() => onSelectTab('custom')}
-                    className={`flex-1 sm:flex-none flex items-center justify-center gap-2 px-4 py-1.5 rounded-lg text-xs font-bold transition-all ${
-                      activeTab === 'custom'
-                        ? 'bg-brand-600 text-white shadow-md'
-                        : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
-                    }`}
-                  >
-                    <CheckSquare className="h-3.5 w-3.5" />
-                    <span>Custom Fund List</span>
-                    <span className={`ml-1 px-2 py-0.2 rounded-full text-[10px] font-extrabold ${
-                      activeTab === 'custom' ? 'bg-white/20 text-white' : 'bg-slate-800 text-brand-400 border border-brand-500/30'
-                    }`}>
-                      {selectedCount}
-                    </span>
-                  </button>
-                </div>
-
-                {/* Regular / Direct Plan Segmented Switch */}
-                <div className="flex items-center gap-2 whitespace-nowrap">
-                  <span className="text-xs font-semibold text-slate-400">Plan:</span>
-                  <div className="flex items-center p-1 bg-slate-900/90 rounded-xl border border-slate-800">
-                    <button
-                      onClick={() => onSelectPlan('regular')}
-                      className={`px-3 py-1 rounded-lg text-xs font-bold transition-all ${
-                        selectedPlan === 'regular'
-                          ? 'bg-indigo-600 text-white shadow-sm'
-                          : 'text-slate-400 hover:text-white'
-                      }`}
-                    >
-                      Regular
-                    </button>
-
-                    <button
-                      onClick={() => onSelectPlan('direct')}
-                      className={`px-3 py-1 rounded-lg text-xs font-bold transition-all ${
-                        selectedPlan === 'direct'
-                          ? 'bg-emerald-600 text-white shadow-sm'
-                          : 'text-slate-400 hover:text-white'
-                      }`}
-                    >
-                      Direct
-                    </button>
-                  </div>
-                </div>
-              </div>
-            </>
-          ) : (
-            <>
-              {/* SIP Mode Info Breadcrumb */}
-              <div className="flex items-center gap-2.5 w-full lg:w-auto">
-                <span className="flex items-center justify-center w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
-                <span className="text-xs font-bold text-white">SIP Calculator Mode</span>
-                <span className="text-slate-500 text-xs">•</span>
-                <span className="text-xs text-slate-400">
-                  Historical NAV Cash-Flow Engine (1Y, 2Y, 3Y, 5Y, 10Y Returns)
-                </span>
-              </div>
-
-              {/* Plan Switch for SIP */}
-              <div className="flex items-center gap-3 w-full lg:w-auto justify-end">
-                <div className="flex items-center gap-2 whitespace-nowrap">
-                  <span className="text-xs font-semibold text-slate-400">Default Plan:</span>
-                  <div className="flex items-center p-1 bg-slate-900/90 rounded-xl border border-slate-800">
-                    <button
-                      onClick={() => onSelectPlan('regular')}
-                      className={`px-3 py-1 rounded-lg text-xs font-bold transition-all ${
-                        selectedPlan === 'regular'
-                          ? 'bg-indigo-600 text-white shadow-sm'
-                          : 'text-slate-400 hover:text-white'
-                      }`}
-                    >
-                      Regular
-                    </button>
-
-                    <button
-                      onClick={() => onSelectPlan('direct')}
-                      className={`px-3 py-1 rounded-lg text-xs font-bold transition-all ${
-                        selectedPlan === 'direct'
-                          ? 'bg-emerald-600 text-white shadow-sm'
-                          : 'text-slate-400 hover:text-white'
-                      }`}
-                    >
-                      Direct
-                    </button>
-                  </div>
-                </div>
-              </div>
-            </>
-          )}
-
-        </div>
+            </div>
+          </div>
+        )}
 
       </div>
     </header>

@@ -224,10 +224,17 @@ export function App() {
   const handleManualRefresh = async () => {
     setIsRefreshing(true);
     try {
-      await triggerRefresh();
-      await loadFunds(activeCategory, searchQuery, selectedPlan, page, customDays, startDate, endDate);
+      const refreshRes = await triggerRefresh();
+      if (refreshRes?.data?.reportDate) {
+        setMeta(prev => ({
+          ...prev,
+          reportDate: refreshRes.data.reportDate,
+          lastUpdated: refreshRes.data.lastUpdated || new Date().toISOString()
+        }));
+      }
+      await loadFunds(activeCategory, searchQuery, selectedPlan, page, customDaysList, startDate, endDate);
       if (selectedFundIds.size > 0) {
-        await loadCustomFunds(selectedFundIds, selectedPlan, customDays, startDate, endDate);
+        await loadCustomFunds(selectedFundIds, selectedPlan, customDaysList, startDate, endDate);
       }
     } catch (err) {
       setError(err.message || 'Failed to refresh AMFI data.');

@@ -5,6 +5,7 @@
 const amfiService = require('../services/amfiService');
 const sipEngine = require('../utils/sipEngine');
 const logger = require('../utils/logger');
+const { MASTER_ALLOWLIST } = require('../config/masterList');
 
 /**
  * POST /api/sip/calculate
@@ -45,7 +46,7 @@ const calculateSip = async (req, res) => {
       });
     }
 
-    // Resolve matching schemes with fallback
+    // Resolve matching schemes with robust fallback
     const matchedSchemes = ids
       .map(id => {
         let scheme = amfiService.schemeMap.get(id);
@@ -56,9 +57,48 @@ const calculateSip = async (req, res) => {
             (s.displayName && s.displayName.toLowerCase().replace(/[^a-z0-9]/g, '') === String(id).toLowerCase().replace(/[^a-z0-9]/g, ''))
           );
         }
+        if (!scheme) {
+          const allowMatch = MASTER_ALLOWLIST.find(a => 
+            a.id === id || 
+            a.id.replace(/-fund-/g, '-') === id.replace(/-fund-/g, '-') ||
+            (a.displayName && a.displayName.toLowerCase().replace(/[^a-z0-9]/g, '') === String(id).toLowerCase().replace(/[^a-z0-9]/g, ''))
+          );
+          if (allowMatch) {
+            scheme = {
+              id: allowMatch.id,
+              displayName: allowMatch.displayName,
+              amfiSchemeName: allowMatch.amfiSchemeName,
+              category: allowMatch.category,
+              amcName: allowMatch.amcName,
+              regularSchemeCode: allowMatch.regularSchemeCode,
+              directSchemeCode: allowMatch.directSchemeCode
+            };
+          }
+        }
         return scheme;
       })
       .filter(Boolean);
+
+    if (matchedSchemes.length === 0) {
+      return res.json({
+        success: true,
+        data: {
+          results: ids.map(id => ({
+            fundId: id,
+            displayName: id,
+            plan: isDirect ? 'Direct' : 'Regular',
+            error: 'Scheme not found in registry',
+            returns: { return1Yr: null, return2Yr: null, return3Yr: null, return5Yr: null, return10Yr: null }
+          })),
+          total: ids.length,
+          monthlySip: numericSip,
+          calculationDate: resolvedCalcDate,
+          sipDay: numericSipDay,
+          plan: isDirect ? 'direct' : 'regular',
+          reportDate: amfiService.reportDate
+        }
+      });
+    }
 
     // Compute SIP returns for each scheme
     const results = await Promise.all(
@@ -80,6 +120,19 @@ const calculateSip = async (req, res) => {
           }
 
           const rawNavList = await amfiService.getNavHistory(schemeCode);
+
+          if (!rawNavList || rawNavList.length === 0) {
+            return {
+              fundId: scheme.id,
+              displayName: scheme.displayName,
+              amfiSchemeName: scheme.amfiSchemeName,
+              category: scheme.category,
+              amcName: scheme.amcName,
+              plan: isDirect ? 'Direct' : 'Regular',
+              error: 'Historical NAV records temporarily unavailable for calculation',
+              returns: { return1Yr: null, return2Yr: null, return3Yr: null, return5Yr: null, return10Yr: null }
+            };
+          }
 
           const fundSipResult = sipEngine.calculateFullFundSip({
             fund: scheme,

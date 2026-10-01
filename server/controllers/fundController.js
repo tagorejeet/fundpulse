@@ -213,8 +213,16 @@ const refreshData = async (req, res) => {
   try {
     logger.info('Manual AMFI refresh requested');
     amfiService.isInitialized = false;
+    amfiService.inFlightInitPromise = null;
     amfiService.navHistoryCache.clear();
+
+    const latestNavDate = await amfiService.resolveLatestNavDate();
+    if (latestNavDate) {
+      amfiService.reportDate = latestNavDate;
+    }
+
     await amfiService.initializeMasterRegistry();
+    amfiService.lastUpdated = new Date().toISOString();
 
     res.json({
       success: true,

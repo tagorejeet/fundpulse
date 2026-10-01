@@ -142,7 +142,10 @@ class AmfiService {
     this.masterSchemes = []; // Array of scheme objects
     this.schemeMap = new Map(); // id -> scheme object
     this.navHistoryCache = new Map(); // schemeCode -> { navList: [{date, nav}], timestamp }
-    this.reportDate = '25-Sep-2026';
+    // Initialize to yesterday's date dynamically
+    const yesterday = new Date();
+    yesterday.setDate(yesterday.getDate() - 1);
+    this.reportDate = formatAmfiDate(yesterday);
     this.lastUpdated = new Date().toISOString();
     this.isInitialized = false;
     this.inFlightInitPromise = null;
@@ -162,6 +165,32 @@ class AmfiService {
   }
 
   /**
+   * Resolves the latest available mutual fund NAV date across India from authoritative feeds
+   */
+  async resolveLatestNavDate() {
+    const candidateCodes = [120152, 106235, 118834, 120503];
+    for (const code of candidateCodes) {
+      try {
+        const res = await fetch(`https://api.mfapi.in/mf/${code}`, {
+          signal: AbortSignal.timeout(3500)
+        });
+        if (res.ok) {
+          const json = await res.json();
+          if (json?.data?.[0]?.date) {
+            const [d, m, y] = json.data[0].date.split('-');
+            const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+            const monthName = months[parseInt(m, 10) - 1] || m;
+            return `${d}-${monthName}-${y}`;
+          }
+        }
+      } catch (err) {
+        // Continue to next candidate
+      }
+    }
+    return null;
+  }
+
+  /**
    * Fetch Live AUM, Benchmarks, and Riskometers directly from official AMFI Fund Performance endpoint
    */
   async fetchAmfiLiveAumData() {
@@ -170,8 +199,8 @@ class AmfiService {
     const today = new Date();
     const subCats = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 12, 13, 14, 15];
 
-    // AMFI updates data around 7 PM evening. Try candidate report dates starting from yesterday.
-    for (let dayOffset = 1; dayOffset <= 5; dayOffset++) {
+    // AMFI updates performance data around 7-9 PM evening. Check candidate dates from today backwards.
+    for (let dayOffset = 0; dayOffset <= 5; dayOffset++) {
       const candidateDate = new Date(today);
       candidateDate.setDate(today.getDate() - dayOffset);
       const dateStr = formatAmfiDate(candidateDate);
@@ -193,7 +222,7 @@ class AmfiService {
               mfid: 0,
               reportDate: dateStr
             }),
-            timeout: 3000
+            signal: AbortSignal.timeout(2500)
           });
 
           if (res.ok) {
@@ -217,7 +246,7 @@ class AmfiService {
             }
           }
         } catch (err) {
-          // Silent timeout catch for subcategory fetch
+          // Timeout or connection error for subcategory fetch
         }
       }
 
@@ -228,7 +257,11 @@ class AmfiService {
       }
     }
 
-    if (resolvedDate) {
+    // Resolve latest published NAV date across Indian mutual funds
+    const latestNavDate = await this.resolveLatestNavDate();
+    if (latestNavDate) {
+      this.reportDate = latestNavDate;
+    } else if (resolvedDate) {
       this.reportDate = resolvedDate;
     }
 
@@ -254,7 +287,7 @@ class AmfiService {
         const amfiList = await this.fetchAmfiLiveAumData();
 
         // 2. Fetch full master scheme directory from official API endpoint
-        const res = await fetch('https://api.mfapi.in/mf', { timeout: 15000 });
+        const res = await fetch('https://api.mfapi.in/mf', { signal: AbortSignal.timeout(15000) });
         if (!res.ok) throw new Error(`Failed to fetch master scheme list: HTTP ${res.status}`);
         const rawList = await res.json();
 
@@ -440,7 +473,7 @@ class AmfiService {
     }
 
     try {
-      const res = await fetch(`https://api.mfapi.in/mf/${code}`, { timeout: 10000 });
+      const res = await fetch(`https://api.mfapi.in/mf/${code}`, { signal: AbortSignal.timeout(8000) });
       if (!res.ok) return [];
       const payload = await res.json();
       const navList = payload.data || [];
