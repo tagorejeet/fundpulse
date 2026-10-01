@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import {
   Calculator,
   Search,
@@ -158,6 +158,8 @@ export const SipCalculator = ({
     }
   }, [allFunds]);
 
+  const apiSearchRequestIdRef = useRef(0);
+
   // Debounced API search when query changes
   useEffect(() => {
     const q = searchQuery.trim();
@@ -168,9 +170,13 @@ export const SipCalculator = ({
     }
 
     setIsSearchingApi(true);
+    const requestId = ++apiSearchRequestIdRef.current;
+
     const timer = setTimeout(async () => {
       try {
         const res = await fetchFunds({ search: q, plan, limit: 20 });
+        if (requestId !== apiSearchRequestIdRef.current) return;
+
         if (res && res.data && res.data.funds) {
           setApiSearchResults(res.data.funds);
           setFundMetaMap(prev => {
@@ -182,9 +188,13 @@ export const SipCalculator = ({
           });
         }
       } catch (err) {
-        console.error('Error searching funds via API:', err);
+        if (requestId === apiSearchRequestIdRef.current) {
+          console.error('Error searching funds via API:', err);
+        }
       } finally {
-        setIsSearchingApi(false);
+        if (requestId === apiSearchRequestIdRef.current) {
+          setIsSearchingApi(false);
+        }
       }
     }, 250);
 

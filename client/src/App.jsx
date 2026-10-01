@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import Header from './components/Header';
 import SummaryCards from './components/SummaryCards';
 import CategoryFilter from './components/CategoryFilter';
@@ -23,7 +23,27 @@ export function App() {
   const [selectedPlan, setSelectedPlan] = useState('regular'); // 'regular' | 'direct'
   const [activeCategory, setActiveCategory] = useState('all');
   const [searchQuery, setSearchQuery] = useState('');
+  const [debouncedSearchQuery, setDebouncedSearchQuery] = useState('');
   const [page, setPage] = useState(1);
+  const activeRequestIdRef = useRef(0);
+
+  // Debounce search query to eliminate network race conditions and input lag
+  useEffect(() => {
+    if (!searchQuery) {
+      setDebouncedSearchQuery('');
+      return;
+    }
+    const timer = setTimeout(() => {
+      setDebouncedSearchQuery(searchQuery);
+    }, 280);
+
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
+
+  // When debounced search changes, reset page to 1
+  useEffect(() => {
+    setPage(1);
+  }, [debouncedSearchQuery]);
 
   // Custom Day Period State (defaults to 33 days as requested by user)
   const todayStr = useMemo(() => new Date().toISOString().split('T')[0], []);
@@ -86,13 +106,14 @@ export function App() {
   // Load Main Paginated Schemes
   const loadFunds = useCallback(async (
     cat = activeCategory,
-    query = searchQuery,
+    query = debouncedSearchQuery,
     plan = selectedPlan,
     p = page,
     daysList = customDaysList,
     sDate = startDate,
     eDate = endDate
   ) => {
+    const requestId = ++activeRequestIdRef.current;
     setIsLoading(true);
     setError(null);
     try {
@@ -108,6 +129,9 @@ export function App() {
         endDate: eDate
       });
 
+      // Ignore response if a newer search/pagination request was triggered
+      if (requestId !== activeRequestIdRef.current) return;
+
       setFunds(res.data.funds || []);
       setTotalFunds(res.data.total || 0);
       setTotalPages(res.data.totalPages || 1);
@@ -119,11 +143,15 @@ export function App() {
         isCached: res.data.isCached
       });
     } catch (err) {
-      setError(err.message || 'AMFI data is temporarily unavailable.');
+      if (requestId === activeRequestIdRef.current) {
+        setError(err.message || 'AMFI data is temporarily unavailable.');
+      }
     } finally {
-      setIsLoading(false);
+      if (requestId === activeRequestIdRef.current) {
+        setIsLoading(false);
+      }
     }
-  }, [activeCategory, searchQuery, selectedPlan, page, customDaysList, startDate, endDate]);
+  }, [activeCategory, debouncedSearchQuery, selectedPlan, page, customDaysList, startDate, endDate]);
 
   // Load Batch Schemes for Custom Fund List
   const loadCustomFunds = useCallback(async (
@@ -158,8 +186,8 @@ export function App() {
 
   // Initial Load & Effect triggers
   useEffect(() => {
-    loadFunds(activeCategory, searchQuery, selectedPlan, page, customDaysList, startDate, endDate);
-  }, [activeCategory, searchQuery, selectedPlan, page, customDaysList, startDate, endDate, loadFunds]);
+    loadFunds(activeCategory, debouncedSearchQuery, selectedPlan, page, customDaysList, startDate, endDate);
+  }, [activeCategory, debouncedSearchQuery, selectedPlan, page, customDaysList, startDate, endDate, loadFunds]);
 
   useEffect(() => {
     if (activeTab === 'custom') {

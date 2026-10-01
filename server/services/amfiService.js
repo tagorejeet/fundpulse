@@ -142,6 +142,7 @@ class AmfiService {
     this.masterSchemes = []; // Array of scheme objects
     this.schemeMap = new Map(); // id -> scheme object
     this.navHistoryCache = new Map(); // schemeCode -> { navList: [{date, nav}], timestamp }
+    this.computedCache = new Map(); // cacheKey -> { data, timestamp }
     // Initialize to yesterday's date dynamically
     const yesterday = new Date();
     yesterday.setDate(yesterday.getDate() - 1);
@@ -497,6 +498,14 @@ class AmfiService {
     const schemeCode = (isDirect ? scheme.directSchemeCode : scheme.regularSchemeCode) || scheme.regularSchemeCode || scheme.directSchemeCode;
     const daysList = parseDaysList(customDays);
 
+    if (schemeCode) {
+      const cacheKey = `${schemeCode}_${isDirect ? 'dir' : 'reg'}_${daysList.join(',')}_${startDate || ''}_${endDate || ''}`;
+      const cached = this.computedCache.get(cacheKey);
+      if (cached && (Date.now() - cached.timestamp < AMFI_CACHE_TTL * 1000)) {
+        return cached.data;
+      }
+    }
+
     // Default return object
     const resultReturns = {
       return1Yr: null,
@@ -611,6 +620,11 @@ class AmfiService {
           resultReturns.rangeDays = cDays;
         }
       }
+    }
+
+    if (schemeCode) {
+      const cacheKey = `${schemeCode}_${isDirect ? 'dir' : 'reg'}_${daysList.join(',')}_${startDate || ''}_${endDate || ''}`;
+      this.computedCache.set(cacheKey, { data: resultReturns, timestamp: Date.now() });
     }
 
     return resultReturns;

@@ -151,7 +151,7 @@ const Header = ({
             </div>
 
             {/* View Tabs (All Schemes vs Custom Fund List) */}
-            <div className="flex items-center gap-3 w-full lg:w-auto justify-between lg:justify-end">
+            <div className="flex items-center gap-3 w-full lg:w-auto justify-between lg:justify-end flex-wrap">
               <div className="flex items-center p-1 bg-slate-900/90 rounded-xl border border-slate-800 w-full sm:w-auto">
                 <button
                   onClick={() => onSelectTab('all')}

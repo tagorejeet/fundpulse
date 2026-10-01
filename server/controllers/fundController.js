@@ -215,6 +215,7 @@ const refreshData = async (req, res) => {
     amfiService.isInitialized = false;
     amfiService.inFlightInitPromise = null;
     amfiService.navHistoryCache.clear();
+    amfiService.computedCache.clear();
 
     const latestNavDate = await amfiService.resolveLatestNavDate();
     if (latestNavDate) {

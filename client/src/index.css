@@ -32,19 +32,154 @@
   border: 1px solid rgba(255, 255, 255, 0.08);
 }
 
-.light .glass-card {
-  background: rgba(255, 255, 255, 0.85);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  border: 1px solid rgba(0, 0, 0, 0.08);
-}
-
 .glass-pill {
   background: rgba(30, 41, 59, 0.6);
   border: 1px solid rgba(255, 255, 255, 0.1);
 }
 
-.light .glass-pill {
-  background: rgba(241, 245, 249, 0.8);
-  border: 1px solid rgba(0, 0, 0, 0.08);
+/* =========================================================
+   LIGHT MODE DESIGN SYSTEM - Sophisticated High Contrast
+   ========================================================= */
+html.light,
+html.light body,
+html.light .app-container {
+  background-color: #f8fafc !important;
+  color: #0f172a !important;
 }
+
+html.light header {
+  background-color: rgba(255, 255, 255, 0.92) !important;
+  border-color: #e2e8f0 !important;
+  box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.05) !important;
+}
+
+html.light .glass-card {
+  background: rgba(255, 255, 255, 0.95) !important;
+  border-color: #e2e8f0 !important;
+  box-shadow: 0 4px 16px -2px rgba(15, 23, 42, 0.05), 0 2px 4px -1px rgba(15, 23, 42, 0.03) !important;
+}
+
+html.light .glass-pill {
+  background: rgba(241, 245, 249, 0.95) !important;
+  border-color: #cbd5e1 !important;
+  color: #334155 !important;
+}
+
+/* Light Mode Typography Hierarchy */
+html.light .text-white {
+  color: #0f172a !important;
+}
+
+html.light .text-slate-100 {
+  color: #0f172a !important;
+}
+
+html.light .text-slate-200 {
+  color: #1e293b !important;
+}
+
+html.light .text-slate-300 {
+  color: #334155 !important;
+}
+
+html.light .text-slate-400 {
+  color: #64748b !important;
+}
+
+html.light .text-slate-500 {
+  color: #64748b !important;
+}
+
+/* Light Mode Background Surfaces */
+html.light .bg-slate-950,
+html.light .bg-slate-950\/80 {
+  background-color: #f8fafc !important;
+}
+
+html.light .bg-slate-900,
+html.light .bg-slate-900\/90,
+html.light .bg-slate-900\/95,
+html.light .bg-slate-900\/60 {
+  background-color: #ffffff !important;
+}
+
+html.light .bg-slate-800,
+html.light .bg-slate-800\/80,
+html.light .bg-slate-800\/90,
+html.light .bg-slate-800\/50,
+html.light .bg-slate-800\/60 {
+  background-color: #f1f5f9 !important;
+  color: #334155 !important;
+}
+
+/* Light Mode Borders */
+html.light .border-slate-800,
+html.light .border-slate-800\/40,
+html.light .border-slate-800\/80,
+html.light .border-slate-700,
+html.light .border-slate-700\/60,
+html.light .border-slate-700\/80 {
+  border-color: #e2e8f0 !important;
+}
+
+/* Light Mode Inputs and Selects */
+html.light input,
+html.light select {
+  background-color: #ffffff !important;
+  color: #0f172a !important;
+  border-color: #cbd5e1 !important;
+}
+
+html.light input::placeholder {
+  color: #94a3b8 !important;
+}
+
+/* Light Mode Table Styling */
+html.light thead,
+html.light thead.bg-slate-900\/90 {
+  background-color: #f1f5f9 !important;
+  border-color: #e2e8f0 !important;
+}
+
+html.light thead th {
+  color: #475569 !important;
+}
+
+html.light table tbody tr {
+  border-color: #f1f5f9 !important;
+}
+
+html.light table tbody tr:hover {
+  background-color: rgba(241, 245, 249, 0.8) !important;
+}
+
+html.light .bg-brand-950\/30 {
+  background-color: rgba(238, 242, 255, 0.6) !important;
+}
+
+/* Preserve bright white text on primary actionable buttons */
+html.light button.bg-brand-600,
+html.light button.bg-indigo-600,
+html.light button.bg-emerald-600,
+html.light button.bg-gradient-to-r,
+html.light .bg-brand-600,
+html.light .bg-indigo-600,
+html.light .bg-emerald-600 {
+  color: #ffffff !important;
+}
+
+html.light button.bg-brand-600 *,
+html.light button.bg-indigo-600 *,
+html.light button.bg-emerald-600 *,
+html.light button.bg-gradient-to-r * {
+  color: #ffffff !important;
+}
+
+html.light .text-emerald-400 {
+  color: #059669 !important;
+}
+
+html.light .text-rose-400 {
+  color: #e11d48 !important;
+}
+
