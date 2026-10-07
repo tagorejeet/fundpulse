@@ -15,6 +15,37 @@ const parseNum = (val) => {
   return Number(val);
 };
 
+const parseAum = (fund) => {
+  if (!fund) return 'N/A';
+  if (fund.dailyAUMRaw !== null && fund.dailyAUMRaw !== undefined && !isNaN(fund.dailyAUMRaw) && fund.dailyAUMRaw !== '') {
+    return Number(Number(fund.dailyAUMRaw).toFixed(2));
+  }
+  if (fund.aum !== null && fund.aum !== undefined && !isNaN(fund.aum) && fund.aum !== '') {
+    return Number(Number(fund.aum).toFixed(2));
+  }
+  if (fund.aumRaw !== null && fund.aumRaw !== undefined && !isNaN(fund.aumRaw) && fund.aumRaw !== '') {
+    return Number(Number(fund.aumRaw).toFixed(2));
+  }
+  const formatted = fund.dailyAUMFormatted || fund.aumFormatted;
+  if (formatted && typeof formatted === 'string') {
+    const cleaned = formatted.replace(/[₹,Cr\s]/gi, '').trim();
+    const val = parseFloat(cleaned);
+    if (!isNaN(val) && val > 0) return Number(val.toFixed(2));
+  }
+  return 'N/A';
+};
+
+const parseNav = (val) => {
+  if (val === null || val === undefined || val === 'N/A' || val === '') return 'N/A';
+  if (typeof val === 'number') return isNaN(val) ? 'N/A' : Number(val.toFixed(2));
+  if (typeof val === 'string') {
+    const cleaned = val.replace(/[₹,\s]/gi, '').trim();
+    const parsed = parseFloat(cleaned);
+    return isNaN(parsed) ? 'N/A' : Number(parsed.toFixed(2));
+  }
+  return 'N/A';
+};
+
 const parsePct = (val) => {
   if (val === null || val === undefined || val === 'N/A' || isNaN(val)) return 'N/A';
   return Number(val) / 100;
@@ -92,9 +123,11 @@ export function createAmfiWorksheet({
   ];
 
   funds.forEach(fund => {
+    const aumVal = parseAum(fund);
+
     if (isBoth) {
-      const regNav = parseNum(fund.regNav ?? fund.nav);
-      const dirNav = parseNum(fund.dirNav);
+      const regNav = parseNav(fund.regNav ?? fund.navRegular ?? fund.currentNav ?? fund.nav);
+      const dirNav = parseNav(fund.dirNav ?? fund.navDirect ?? fund.currentNav ?? fund.nav);
       if (isDaysMode) {
         const dayVals = customDaysList.flatMap(d => [
           parsePct(fund[`regReturn${d}d`] ?? fund[`return${d}d`]),
@@ -103,7 +136,7 @@ export function createAmfiWorksheet({
         wsData.push([
           fund.category || 'N/A',
           fund.displayName || fund.schemeName || 'N/A',
-          parseNum(fund.aum),
+          aumVal,
           regNav,
           dirNav,
           ...dayVals
@@ -112,7 +145,7 @@ export function createAmfiWorksheet({
         wsData.push([
           fund.category || 'N/A',
           fund.displayName || fund.schemeName || 'N/A',
-          parseNum(fund.aum),
+          aumVal,
           regNav,
           dirNav,
           parsePct(fund.regReturn1Yr ?? fund.return1Yr),
@@ -128,21 +161,22 @@ export function createAmfiWorksheet({
         ]);
       }
     } else {
+      const currentNav = parseNav(fund.currentNav ?? fund.nav ?? (plan === 'direct' ? fund.dirNav : fund.regNav));
       if (isDaysMode) {
         const dayVals = customDaysList.map(d => parsePct(fund[`return${d}d`]));
         wsData.push([
           fund.category || 'N/A',
           fund.displayName || fund.schemeName || 'N/A',
-          parseNum(fund.aum),
-          parseNum(fund.nav),
+          aumVal,
+          currentNav,
           ...dayVals
         ]);
       } else {
         wsData.push([
           fund.category || 'N/A',
           fund.displayName || fund.schemeName || 'N/A',
-          parseNum(fund.aum),
-          parseNum(fund.nav),
+          aumVal,
+          currentNav,
           parsePct(fund.return1Yr),
           parsePct(fund.return2Yr),
           parsePct(fund.return3Yr),
@@ -326,7 +360,7 @@ export function createCombinedSummaryWorksheet(funds = [], indices = [], reportD
       'Mutual Fund',
       fund.category || 'N/A',
       fund.displayName || fund.schemeName || 'N/A',
-      parseNum(fund.aum),
+      parseAum(fund),
       parsePct(fund.return1Yr),
       parsePct(fund.return2Yr),
       parsePct(fund.return3Yr),
