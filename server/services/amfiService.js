@@ -74,6 +74,35 @@ function cleanSchemeName(name) {
     .trim();
 }
 
+/**
+ * Helper to determine scheme option type ('growth' | 'bonus' | 'idcw' | 'other')
+ * STRICT RULE: Only classify as 'growth' if the scheme specifically has '- Growth' or option is Growth,
+ * NOT just because 'growth' is part of the fund's brand name like 'Nippon India Growth Mid Cap Fund - Bonus Option'
+ */
+function determineSchemeOption(name) {
+  if (!name) return 'other';
+  const lower = name.toLowerCase().trim();
+
+  // 1. If it specifies Bonus Option
+  if (/\bbonus\b/i.test(lower)) {
+    return 'bonus';
+  }
+
+  // 2. If it specifies IDCW Option or Dividend
+  if (/\b(idcw|dividend|div)\b/i.test(lower)) {
+    return 'idcw';
+  }
+
+  // 3. For Growth: Must specifically have "- Growth", "- Gr", "(Growth)", "(Gr)", "Growth Option", "Growth Plan",
+  // or end with "- Growth" / "Growth" as the option suffix.
+  // Avoid false matching when "Growth" is part of the fund's brand name (e.g. "Nippon India Growth Fund - Bonus Option").
+  if (/(\s*-\s*growth\b|\s*-\s*gr\b|\bgrowth\s*option\b|\bgrowth\s*plan\b|\(growth\)|\(gr\)|\bregular\s+growth\b|\bdirect\s+growth\b|\s*-\s*growth\s*$|\bgrowth\s*$)/i.test(lower)) {
+    return 'growth';
+  }
+
+  return 'other';
+}
+
 // User-specified formula: Annualized Return = 4 * ((VT / V0)^(1 / (4 * T)) - 1)
 function calculateFormulaReturn(V0, VT, T) {
   if (!V0 || !VT || V0 <= 0 || VT <= 0 || !T || T <= 0) return null;
@@ -295,15 +324,6 @@ class AmfiService {
 
         logger.info(`Retrieved ${rawList.length} total raw schemes from master source.`);
 
-        // Helper to determine scheme option type (Growth / Bonus / IDCW)
-        const determineSchemeOption = (name) => {
-          if (!name) return 'growth';
-          const lower = name.toLowerCase();
-          if (lower.includes('bonus')) return 'bonus';
-          if (lower.includes('idcw') || lower.includes('dividend') || lower.includes('div')) return 'idcw';
-          return 'growth';
-        };
-
         const pairedMap = new Map();
 
         // Helper to match AMFI AUM entry for a scheme
@@ -448,6 +468,7 @@ class AmfiService {
           amfiSchemeName: allowItem.amfiSchemeName,
           amcName: allowItem.amcName,
           category: allowItem.category,
+          schemeOption: determineSchemeOption(allowItem.displayName),
           subCategoryId: allowItem.subCategoryId,
           regularSchemeCode: allowItem.regularSchemeCode || null,
           directSchemeCode: allowItem.directSchemeCode || null,
@@ -749,15 +770,15 @@ class AmfiService {
     if (option && option.trim().toLowerCase() !== 'all') {
       const optLower = option.trim().toLowerCase();
       filtered = filtered.filter(s => {
-        const sOpt = s.schemeOption || (s.displayName && /bonus/i.test(s.displayName) ? 'bonus' : /(idcw|dividend|div)/i.test(s.displayName) ? 'idcw' : 'growth');
+        const sOpt = s.schemeOption || determineSchemeOption(s.displayName);
+        if (optLower === 'growth') {
+          return sOpt === 'growth';
+        }
         if (optLower === 'bonus') {
-          return sOpt === 'bonus' || (s.displayName && /bonus/i.test(s.displayName));
+          return sOpt === 'bonus';
         }
         if (optLower === 'idcw') {
-          return sOpt === 'idcw' || (s.displayName && /(idcw|dividend|div)/i.test(s.displayName));
-        }
-        if (optLower === 'growth') {
-          return sOpt === 'growth' || (s.displayName && /growth/i.test(s.displayName));
+          return sOpt === 'idcw';
         }
         return true;
       });
@@ -785,7 +806,7 @@ class AmfiService {
           displayName: scheme.displayName,
           amfiSchemeName: scheme.amfiSchemeName,
           category: scheme.category,
-          schemeOption: scheme.schemeOption,
+          schemeOption: scheme.schemeOption || determineSchemeOption(scheme.displayName),
           subCategoryId: scheme.subCategoryId,
           amcName: scheme.amcName,
           benchmark: scheme.benchmark,

@@ -37,9 +37,27 @@ const FundTable = ({
     }
   };
 
-  const sortedFunds = useMemo(() => {
+  const determineOption = (fund) => {
+    if (fund.schemeOption) return fund.schemeOption;
+    const name = fund.displayName || '';
+    const lower = name.toLowerCase().trim();
+    if (/\bbonus\b/i.test(lower)) return 'bonus';
+    if (/\b(idcw|dividend|div)\b/i.test(lower)) return 'idcw';
+    if (/(\s*-\s*growth\b|\s*-\s*gr\b|\bgrowth\s*option\b|\bgrowth\s*plan\b|\(growth\)|\(gr\)|\bregular\s+growth\b|\bdirect\s+growth\b|\s*-\s*growth\s*$|\bgrowth\s*$)/i.test(lower)) {
+      return 'growth';
+    }
+    return 'other';
+  };
+
+  const filteredFunds = useMemo(() => {
     if (!funds) return [];
-    return [...funds].sort((a, b) => {
+    if (!selectedSchemeOption || selectedSchemeOption === 'all') return funds;
+    return funds.filter(f => determineOption(f) === selectedSchemeOption);
+  }, [funds, selectedSchemeOption]);
+
+  const sortedFunds = useMemo(() => {
+    if (!filteredFunds) return [];
+    return [...filteredFunds].sort((a, b) => {
       let aVal = a[sortField];
       let bVal = b[sortField];
 
@@ -53,12 +71,12 @@ const FundTable = ({
 
       return sortOrder === 'asc' ? aVal - bVal : bVal - aVal;
     });
-  }, [funds, sortField, sortOrder]);
+  }, [filteredFunds, sortField, sortOrder]);
 
   const allPageSelected = useMemo(() => {
-    if (!funds || funds.length === 0) return false;
-    return funds.every(f => selectedFundIds.has(f.id));
-  }, [funds, selectedFundIds]);
+    if (!sortedFunds || sortedFunds.length === 0) return false;
+    return sortedFunds.every(f => selectedFundIds.has(f.id));
+  }, [sortedFunds, selectedFundIds]);
 
   const renderSortIcon = (field) => {
     if (sortField !== field) {
@@ -189,7 +207,7 @@ const FundTable = ({
                   <input
                     type="checkbox"
                     checked={allPageSelected}
-                    onChange={() => onToggleSelectAllPage && onToggleSelectAllPage(funds)}
+                    onChange={() => onToggleSelectAllPage && onToggleSelectAllPage(sortedFunds)}
                     title="Select/Deselect all schemes on this page"
                     className="w-4 h-4 rounded border-slate-700 bg-slate-800 text-brand-600 focus:ring-brand-500 cursor-pointer accent-brand-500"
                   />
