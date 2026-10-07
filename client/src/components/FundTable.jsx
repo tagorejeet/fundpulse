@@ -19,6 +19,9 @@ const FundTable = ({
   selectedFundIds = new Set(),
   onToggleSelectFund,
   onToggleSelectAllPage,
+  suggestionFundIds = new Set(),
+  onToggleSuggestionFund,
+  onToggleSelectAllSuggestionPage,
   onSelectFund,
   searchQuery = '',
   setSearchQuery,
@@ -77,6 +80,11 @@ const FundTable = ({
     if (!sortedFunds || sortedFunds.length === 0) return false;
     return sortedFunds.every(f => selectedFundIds.has(f.id));
   }, [sortedFunds, selectedFundIds]);
+
+  const allSuggestionSelected = useMemo(() => {
+    if (!sortedFunds || sortedFunds.length === 0) return false;
+    return sortedFunds.every(f => suggestionFundIds.has(f.id));
+  }, [sortedFunds, suggestionFundIds]);
 
   const renderSortIcon = (field) => {
     if (sortField !== field) {
@@ -202,15 +210,28 @@ const FundTable = ({
           <table className="w-full text-xs text-left">
             <thead className="bg-slate-900/90 text-slate-400 uppercase font-semibold border-b border-slate-800/80 tracking-wider">
               <tr>
-                {/* Select All Checkbox */}
-                <th className="p-3.5 w-10 text-center">
-                  <input
-                    type="checkbox"
-                    checked={allPageSelected}
-                    onChange={() => onToggleSelectAllPage && onToggleSelectAllPage(sortedFunds)}
-                    title="Select/Deselect all schemes on this page"
-                    className="w-4 h-4 rounded border-slate-700 bg-slate-800 text-brand-600 focus:ring-brand-500 cursor-pointer accent-brand-500"
-                  />
+                {/* Select All Checkboxes Header (Blue: Custom List, Orange: Suggestion Sheet) */}
+                <th className="p-3.5 w-24 text-center">
+                  <div className="flex items-center justify-center gap-2">
+                    <input
+                      type="checkbox"
+                      checked={allPageSelected}
+                      onChange={() => onToggleSelectAllPage && onToggleSelectAllPage(sortedFunds)}
+                      title="Select all on this page for Custom Fund List (Blue)"
+                      className="w-4 h-4 rounded border-slate-700 bg-slate-800 text-blue-500 focus:ring-blue-500 cursor-pointer accent-blue-500"
+                    />
+                    <input
+                      type="checkbox"
+                      checked={allSuggestionSelected}
+                      onChange={() => onToggleSelectAllSuggestionPage && onToggleSelectAllSuggestionPage(sortedFunds)}
+                      title="Select all on this page for Suggestion Sheet (Orange)"
+                      className="w-4 h-4 rounded border-slate-700 bg-slate-800 text-amber-500 focus:ring-amber-500 cursor-pointer accent-amber-500"
+                    />
+                  </div>
+                  <div className="flex items-center justify-center gap-2 text-[9px] text-slate-400 mt-1 font-mono select-none">
+                    <span className="text-blue-400 font-bold" title="Custom Fund List">Custom</span>
+                    <span className="text-amber-400 font-bold" title="Suggestion Sheet">Suggest</span>
+                  </div>
                 </th>
 
                 <th 
@@ -440,31 +461,51 @@ const FundTable = ({
                 </tr>
               ) : (
                 sortedFunds.map((fund) => {
-                  const isChecked = selectedFundIds.has(fund.id);
+                  const isCustomChecked = selectedFundIds.has(fund.id);
+                  const isSuggestionChecked = suggestionFundIds.has(fund.id);
 
                   return (
                     <tr 
                       key={fund.id}
-                      onClick={() => onToggleSelectFund(fund.id)}
-                      className={`hover:bg-slate-800/50 transition-colors duration-150 cursor-pointer group ${
-                        isChecked ? 'bg-brand-500/10 border-l-2 border-l-brand-500' : ''
+                      className={`hover:bg-slate-800/50 transition-colors duration-150 group ${
+                        isCustomChecked && isSuggestionChecked
+                          ? 'bg-indigo-500/10 border-l-2 border-l-indigo-400'
+                          : isCustomChecked
+                          ? 'bg-blue-500/10 border-l-2 border-l-blue-500'
+                          : isSuggestionChecked
+                          ? 'bg-amber-500/10 border-l-2 border-l-amber-500'
+                          : ''
                       }`}
                     >
-                      {/* Checkbox Column */}
+                      {/* Dual Checkboxes Column: Blue for Custom, Orange for Suggestion */}
                       <td 
                         className="p-3.5 text-center"
                         onClick={(e) => e.stopPropagation()}
                       >
-                        <input
-                          type="checkbox"
-                          checked={isChecked}
-                          onChange={() => onToggleSelectFund(fund.id)}
-                          className="w-4 h-4 rounded border-slate-700 bg-slate-800 text-brand-600 focus:ring-brand-500 cursor-pointer accent-brand-500"
-                        />
+                        <div className="flex items-center justify-center gap-2.5">
+                          <input
+                            type="checkbox"
+                            checked={isCustomChecked}
+                            onChange={() => onToggleSelectFund && onToggleSelectFund(fund.id)}
+                            title="Add to Custom Fund List (Blue)"
+                            className="w-4 h-4 rounded border-slate-700 bg-slate-800 text-blue-500 focus:ring-blue-500 cursor-pointer accent-blue-500"
+                          />
+                          <input
+                            type="checkbox"
+                            checked={isSuggestionChecked}
+                            onChange={() => onToggleSuggestionFund && onToggleSuggestionFund(fund.id)}
+                            title="Add to Suggestion Sheet (Orange)"
+                            className="w-4 h-4 rounded border-slate-700 bg-slate-800 text-amber-500 focus:ring-amber-500 cursor-pointer accent-amber-500"
+                          />
+                        </div>
                       </td>
 
                       {/* Fund Name */}
-                      <td className="p-3.5">
+                      <td 
+                        className="p-3.5 cursor-pointer"
+                        onClick={() => onSelectFund && onSelectFund(fund)}
+                        title="Click to view fund details"
+                      >
                         <div className="font-bold text-white group-hover:text-brand-300 transition-colors">
                           {fund.displayName}
                         </div>

@@ -1,5 +1,5 @@
 import React from 'react';
-import { Activity, RefreshCw, Sun, Moon, CheckSquare, Layers, Calendar, TrendingUp, Calculator } from 'lucide-react';
+import { Activity, RefreshCw, Sun, Moon, CheckSquare, Layers, Calendar, TrendingUp, Calculator, Sparkles } from 'lucide-react';
 import { useTheme } from '../context/ThemeContext';
 import StatusBadge from './StatusBadge';
 
@@ -16,6 +16,7 @@ const Header = ({
   selectedPlan = 'regular',
   onSelectPlan,
   selectedCount = 0,
+  suggestionCount = 0,
   nseSelectedCount = 0,
   calculationDate = '',
   onSelectCalculationDate,
@@ -176,16 +177,33 @@ const Header = ({
                   onClick={() => onSelectTab('custom')}
                   className={`flex-1 sm:flex-none flex items-center justify-center gap-2 px-4 py-1.5 rounded-lg text-xs font-bold transition-all ${
                     activeTab === 'custom'
-                      ? 'bg-brand-600 text-white shadow-md'
+                      ? 'bg-blue-600 text-white shadow-md'
                       : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
                   }`}
                 >
-                  <CheckSquare className="h-3.5 w-3.5" />
+                  <CheckSquare className="h-3.5 w-3.5 text-blue-400" />
                   <span>Custom Fund List</span>
                   <span className={`ml-1 px-2 py-0.2 rounded-full text-[10px] font-extrabold ${
-                    activeTab === 'custom' ? 'bg-white/20 text-white' : 'bg-slate-800 text-brand-400 border border-brand-500/30'
+                    activeTab === 'custom' ? 'bg-white/20 text-white' : 'bg-slate-800 text-blue-400 border border-blue-500/30'
                   }`}>
-                    {nseSelectedCount > 0 ? `${selectedCount} MF + ${nseSelectedCount} NSE` : selectedCount}
+                    {selectedCount}
+                  </span>
+                </button>
+
+                <button
+                  onClick={() => onSelectTab('suggestion')}
+                  className={`flex-1 sm:flex-none flex items-center justify-center gap-2 px-4 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                    activeTab === 'suggestion'
+                      ? 'bg-gradient-to-r from-amber-500 to-orange-600 text-white shadow-md'
+                      : 'text-slate-400 hover:text-amber-400 hover:bg-slate-800/50'
+                  }`}
+                >
+                  <Sparkles className="h-3.5 w-3.5 text-amber-400" />
+                  <span>Suggestion Sheet</span>
+                  <span className={`ml-1 px-2 py-0.2 rounded-full text-[10px] font-extrabold ${
+                    activeTab === 'suggestion' ? 'bg-white/20 text-white' : 'bg-slate-800 text-amber-400 border border-amber-500/30'
+                  }`}>
+                    {suggestionCount}
                   </span>
                 </button>
               </div>

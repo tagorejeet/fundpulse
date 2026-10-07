@@ -14,14 +14,52 @@ import { exportNseListToExcel } from './services/excelExport';
 import { AlertTriangle, RefreshCw, CheckCircle2 } from 'lucide-react';
 
 const LOCAL_STORAGE_KEY = 'fundpulse_custom_fund_ids';
+const LOCAL_STORAGE_SUGGESTION_KEY = 'fundpulse_suggestion_funds';
 const LOCAL_STORAGE_NSE_KEY = 'fundpulse_selected_nse_indices';
+
+const DEFAULT_SUGGESTION_IDS = [
+  'nippon-india-large-cap-growth',
+  'aditya-birla-large-cap-growth',
+  'icici-prudential-bluechip-growth',
+  'kotak-large-cap-growth',
+  'hdfc-mid-cap-growth',
+  'edelweiss-mid-cap-growth',
+  'nippon-india-growth-mid-cap-growth',
+  'whiteoak-capital-mid-cap-growth',
+  'icici-prudential-large-mid-cap-growth',
+  'bandhan-large-mid-cap-growth',
+  'mirae-asset-large-midcap-growth',
+  'bandhan-small-cap-growth',
+  'pgim-small-cap-growth',
+  'nippon-india-small-cap-growth',
+  'sundaram-small-cap-growth',
+  'nippon-india-multicap-growth',
+  'kotak-multicap-regular-growth',
+  'whiteoak-capital-multi-cap-growth',
+  'axis-multicap-regular-growth',
+  'mahindra-manulife-multi-cap-regular-growth',
+  'bandhan-value-growth',
+  'templeton-india-value-growth',
+  'hsbc-value-growth',
+  'nippon-india-value-growth',
+  'icici-value-growth',
+  'jm-flexi-cap-growth',
+  'aditya-birla-flexi-cap-growth',
+  'edelweiss-flexi-cap-growth',
+  'hdfc-flexi-cap-growth',
+  'parag-parikh-flexi-cap-growth',
+  'nippon-india-consumption-growth',
+  'sundaram-consumption-growth',
+  'bajaj-finserv-consumption-growth',
+  'union-innovation-opportunity-growth'
+];
 
 export function App() {
   // Top-Level Application Mode: 'analysis' (Fund Analysis) | 'sip' (SIP Calculator)
   const [appMode, setAppMode] = useState('analysis');
 
   // Navigation & View State (for Fund Analysis mode)
-  const [activeTab, setActiveTab] = useState('all'); // 'all' | 'custom'
+  const [activeTab, setActiveTab] = useState('all'); // 'all' | 'custom' | 'suggestion'
   const [sipActiveTab, setSipActiveTab] = useState('calculator'); // 'calculator' | 'custom'
   const [mode, setMode] = useState('yearly'); // 'yearly' | 'days'
   const [selectedPlan, setSelectedPlan] = useState('regular'); // 'regular' | 'direct'
@@ -70,6 +108,7 @@ export function App() {
   // Data State
   const [funds, setFunds] = useState([]);
   const [customFunds, setCustomFunds] = useState([]);
+  const [suggestionFunds, setSuggestionFunds] = useState([]);
   const [totalFunds, setTotalFunds] = useState(0);
   const [totalPages, setTotalPages] = useState(1);
   const [categoriesList, setCategoriesList] = useState([]);
@@ -78,6 +117,7 @@ export function App() {
   // Status State
   const [isLoading, setIsLoading] = useState(true);
   const [isCustomLoading, setIsCustomLoading] = useState(false);
+  const [isSuggestionLoading, setIsSuggestionLoading] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [error, setError] = useState(null);
   const [selectedOption, setSelectedOption] = useState('all');
@@ -85,9 +125,23 @@ export function App() {
   // Selected Fund Modal State
   const [selectedFundModal, setSelectedFundModal] = useState(null);
 
-  // Persistent Selected Custom Fund IDs (Set stored in localStorage)
+  // Persistent Selected Custom Fund IDs (Set stored in localStorage, with 34 default funds removed)
   const [selectedFundIds, setSelectedFundIds] = useState(() => {
     try {
+      const migrated = localStorage.getItem('fundpulse_custom_migrated_v4');
+      if (!migrated) {
+        localStorage.setItem('fundpulse_custom_migrated_v4', 'true');
+        const saved = localStorage.getItem(LOCAL_STORAGE_KEY);
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          if (Array.isArray(parsed)) {
+            const cleaned = parsed.filter(id => !DEFAULT_SUGGESTION_IDS.includes(id));
+            localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(cleaned));
+            return new Set(cleaned);
+          }
+        }
+        return new Set();
+      }
       const saved = localStorage.getItem(LOCAL_STORAGE_KEY);
       if (saved) {
         const parsed = JSON.parse(saved);
@@ -108,6 +162,30 @@ export function App() {
       console.error('Error saving custom fund selection:', e);
     }
   }, [selectedFundIds]);
+
+  // Persistent Selected Suggestion Sheet Fund IDs (Default to all 34 predefined funds)
+  const [suggestionFundIds, setSuggestionFundIds] = useState(() => {
+    try {
+      const saved = localStorage.getItem(LOCAL_STORAGE_SUGGESTION_KEY);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) return new Set(parsed);
+      }
+    } catch (e) {
+      console.error('Error loading saved suggestion fund selection:', e);
+    }
+    return new Set(DEFAULT_SUGGESTION_IDS);
+  });
+
+  // Save suggestionFundIds to localStorage on change
+  useEffect(() => {
+    try {
+      const arr = Array.from(suggestionFundIds);
+      localStorage.setItem(LOCAL_STORAGE_SUGGESTION_KEY, JSON.stringify(arr));
+    } catch (e) {
+      console.error('Error saving suggestion fund selection:', e);
+    }
+  }, [suggestionFundIds]);
 
   // Persistent Selected NSE Index IDs (Default to all 4 indices pre-selected)
   const [selectedNseIndexIds, setSelectedNseIndexIds] = useState(() => {
@@ -291,6 +369,39 @@ export function App() {
     }
   }, [selectedFundIds, selectedPlan, customDaysList, startDate, endDate, calculationDate]);
 
+  // Load Batch Schemes for Suggestion Sheet
+  const loadSuggestionFunds = useCallback(async (
+    idsSet = suggestionFundIds,
+    plan = selectedPlan,
+    daysList = customDaysList,
+    sDate = startDate,
+    eDate = endDate,
+    calcDate = calculationDate
+  ) => {
+    if (!idsSet || idsSet.size === 0) {
+      setSuggestionFunds([]);
+      return;
+    }
+
+    setIsSuggestionLoading(true);
+    try {
+      const formattedDays = Array.isArray(daysList) ? daysList.join(',') : String(daysList);
+      const res = await fetchBatchFunds({
+        ids: Array.from(idsSet),
+        plan,
+        days: formattedDays,
+        startDate: sDate,
+        endDate: eDate,
+        asOfDate: calcDate
+      });
+      setSuggestionFunds(res.data.funds || []);
+    } catch (err) {
+      console.error('Failed to load suggestion fund list details:', err);
+    } finally {
+      setIsSuggestionLoading(false);
+    }
+  }, [suggestionFundIds, selectedPlan, customDaysList, startDate, endDate, calculationDate]);
+
   // Initial Load & Effect triggers
   useEffect(() => {
     loadFunds(activeCategory, debouncedSearchQuery, selectedPlan, page, customDaysList, startDate, endDate, calculationDate, selectedOption);
@@ -299,8 +410,10 @@ export function App() {
   useEffect(() => {
     if (activeTab === 'custom') {
       loadCustomFunds(selectedFundIds, selectedPlan, customDaysList, startDate, endDate, calculationDate);
+    } else if (activeTab === 'suggestion') {
+      loadSuggestionFunds(suggestionFundIds, selectedPlan, customDaysList, startDate, endDate, calculationDate);
     }
-  }, [activeTab, selectedFundIds, selectedPlan, customDaysList, startDate, endDate, calculationDate, loadCustomFunds]);
+  }, [activeTab, selectedFundIds, suggestionFundIds, selectedPlan, customDaysList, startDate, endDate, calculationDate, loadCustomFunds, loadSuggestionFunds]);
 
   const handleApplyCustomDays = ({ customDaysList: newDaysList, startDate: newStart, endDate: newEnd }) => {
     const validList = (newDaysList && newDaysList.length > 0) ? newDaysList : [33, 50, 67];
@@ -316,6 +429,9 @@ export function App() {
     if (selectedFundIds.size > 0) {
       loadCustomFunds(selectedFundIds, selectedPlan, validList, newStart, newEnd, newEnd || calculationDate);
     }
+    if (suggestionFundIds.size > 0) {
+      loadSuggestionFunds(suggestionFundIds, selectedPlan, validList, newStart, newEnd, newEnd || calculationDate);
+    }
   };
 
   const handleSelectCalculationDate = (newDate) => {
@@ -326,9 +442,12 @@ export function App() {
     if (selectedFundIds.size > 0) {
       loadCustomFunds(selectedFundIds, selectedPlan, customDaysList, startDate, newDate, newDate);
     }
+    if (suggestionFundIds.size > 0) {
+      loadSuggestionFunds(suggestionFundIds, selectedPlan, customDaysList, startDate, newDate, newDate);
+    }
   };
 
-  // Checkbox Handlers
+  // Custom List Checkbox Handlers (Blue Checkbox)
   const handleToggleSelectFund = (id) => {
     setSelectedFundIds(prev => {
       const next = new Set(prev);
@@ -370,6 +489,47 @@ export function App() {
     setCustomFunds([]);
   };
 
+  // Suggestion Sheet Checkbox Handlers (Orange Checkbox)
+  const handleToggleSuggestionFund = (id) => {
+    setSuggestionFundIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      return next;
+    });
+  };
+
+  const handleToggleSelectAllSuggestionPage = (pageFunds) => {
+    if (!pageFunds || pageFunds.length === 0) return;
+    const allSelected = pageFunds.every(f => suggestionFundIds.has(f.id));
+
+    setSuggestionFundIds(prev => {
+      const next = new Set(prev);
+      if (allSelected) {
+        pageFunds.forEach(f => next.delete(f.id));
+      } else {
+        pageFunds.forEach(f => next.add(f.id));
+      }
+      return next;
+    });
+  };
+
+  const handleRemoveSuggestionFund = (id) => {
+    setSuggestionFundIds(prev => {
+      const next = new Set(prev);
+      next.delete(id);
+      return next;
+    });
+  };
+
+  const handleClearSuggestionAll = () => {
+    setSuggestionFundIds(new Set());
+    setSuggestionFunds([]);
+  };
+
   const handleManualRefresh = async () => {
     setIsRefreshing(true);
     setRefreshStatusMessage('Refreshing AMFI data...');
@@ -409,6 +569,9 @@ export function App() {
       await loadFunds(activeCategory, searchQuery, selectedPlan, 1, customDaysList, startDate, today, today);
       if (selectedFundIds.size > 0) {
         await loadCustomFunds(selectedFundIds, selectedPlan, customDaysList, startDate, today, today);
+      }
+      if (suggestionFundIds.size > 0) {
+        await loadSuggestionFunds(suggestionFundIds, selectedPlan, customDaysList, startDate, today, today);
       }
     } catch (err) {
       console.error('Reload error:', err);
@@ -467,6 +630,7 @@ export function App() {
         selectedPlan={selectedPlan}
         onSelectPlan={(plan) => setSelectedPlan(plan)}
         selectedCount={selectedFundIds.size}
+        suggestionCount={suggestionFundIds.size}
         nseSelectedCount={selectedNseIndexIds.size}
         calculationDate={calculationDate}
         onSelectCalculationDate={handleSelectCalculationDate}
@@ -574,6 +738,9 @@ export function App() {
                   selectedFundIds={selectedFundIds}
                   onToggleSelectFund={handleToggleSelectFund}
                   onToggleSelectAllPage={handleToggleSelectAllPage}
+                  suggestionFundIds={suggestionFundIds}
+                  onToggleSuggestionFund={handleToggleSuggestionFund}
+                  onToggleSelectAllSuggestionPage={handleToggleSelectAllSuggestionPage}
                   onSelectFund={(fund) => setSelectedFundModal(fund)}
                   searchQuery={searchQuery}
                   setSearchQuery={(q) => {
@@ -593,6 +760,8 @@ export function App() {
             {/* Tab 2: Custom Fund List View */}
             {activeTab === 'custom' && (
               <CustomFundList
+                type="custom"
+                title="Custom Portfolio Selection"
                 funds={customFunds}
                 nseIndices={nseIndices}
                 selectedNseIndexIds={selectedNseIndexIds}
@@ -608,6 +777,31 @@ export function App() {
                 selectedPlan={selectedPlan}
                 onRemoveFund={handleRemoveFund}
                 onClearAll={handleClearAll}
+                meta={meta}
+                onSelectFund={(fund) => setSelectedFundModal(fund)}
+              />
+            )}
+
+            {/* Tab 3: Suggestion Sheet View */}
+            {activeTab === 'suggestion' && (
+              <CustomFundList
+                type="suggestion"
+                title="Suggestion Sheet"
+                funds={suggestionFunds}
+                nseIndices={nseIndices}
+                selectedNseIndexIds={selectedNseIndexIds}
+                onToggleSelectNseIndex={handleToggleSelectNseIndex}
+                onRemoveNseIndex={handleRemoveNseIndex}
+                isLoading={isSuggestionLoading}
+                mode={mode}
+                customDays={customDays}
+                customDaysList={customDaysList}
+                startDate={startDate}
+                endDate={endDate}
+                calculationDate={calculationDate}
+                selectedPlan={selectedPlan}
+                onRemoveFund={handleRemoveSuggestionFund}
+                onClearAll={handleClearSuggestionAll}
                 meta={meta}
                 onSelectFund={(fund) => setSelectedFundModal(fund)}
               />

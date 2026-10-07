@@ -52,8 +52,12 @@ export const CustomFundList = ({
   onRemoveFund,
   onClearAll,
   meta,
-  onSelectFund
+  onSelectFund,
+  type = 'custom',
+  title = null
 }) => {
+  const isSuggestion = type === 'suggestion';
+  const displayTitle = title || (isSuggestion ? 'Suggestion Sheet Portfolio' : 'Custom Portfolio Selection');
   const [showClearConfirm, setShowClearConfirm] = useState(false);
   const [exportMenuOpen, setExportMenuOpen] = useState(false);
 
@@ -229,9 +233,18 @@ export const CustomFundList = ({
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 p-5 rounded-2xl bg-slate-900 border border-slate-800 shadow-xl">
         <div>
           <h2 className="text-xl font-bold text-white flex items-center gap-2">
-            <span>Custom Portfolio Selection</span>
-            <span className="text-xs px-2.5 py-0.5 rounded-full font-semibold bg-brand-500/10 text-brand-400 border border-brand-500/30 font-mono">
-              {funds.length} Mutual Funds + {selectedNseIndicesList.length} NSE Indices
+            {isSuggestion ? (
+              <Sparkles className="w-5 h-5 text-amber-400" />
+            ) : (
+              <CheckSquare className="w-5 h-5 text-blue-400" />
+            )}
+            <span>{displayTitle}</span>
+            <span className={`text-xs px-2.5 py-0.5 rounded-full font-semibold font-mono ${
+              isSuggestion 
+                ? 'bg-amber-500/10 text-amber-400 border border-amber-500/30' 
+                : 'bg-brand-500/10 text-brand-400 border border-brand-500/30'
+            }`}>
+              {funds.length} Mutual Funds{selectedNseIndicesList.length > 0 ? ` + ${selectedNseIndicesList.length} NSE Indices` : ''}
             </span>
           </h2>
           <div className="text-xs text-slate-400 mt-1 flex flex-wrap items-center gap-2">
@@ -333,7 +346,9 @@ export const CustomFundList = ({
 
         {funds.length === 0 ? (
           <div className="p-8 rounded-2xl bg-slate-900/60 border border-slate-800/80 text-center text-slate-400 text-xs">
-            No mutual funds added to Custom List yet. Check the boxes beside schemes in the main table to add them.
+            {isSuggestion 
+              ? 'No mutual funds in Suggestion Sheet yet. Check the orange boxes beside schemes in the main table to add them.'
+              : 'No mutual funds added to Custom List yet. Check the blue boxes beside schemes in the main table to add them.'}
           </div>
         ) : (
           <div className="space-y-6">
@@ -636,11 +651,15 @@ export const CustomFundList = ({
               <div className="p-2.5 rounded-xl bg-rose-500/10 border border-rose-500/30">
                 <AlertTriangle className="h-6 w-6" />
               </div>
-              <h3 className="text-base font-bold text-white">Clear Custom Selection?</h3>
+              <h3 className="text-base font-bold text-white">
+                {isSuggestion ? 'Clear Suggestion Sheet?' : 'Clear Custom Selection?'}
+              </h3>
             </div>
             
             <p className="text-xs text-slate-300">
-              Are you sure you want to clear your selected mutual funds and NSE indices from the custom list?
+              {isSuggestion 
+                ? 'Are you sure you want to clear your selected mutual funds and NSE indices from the suggestion sheet?' 
+                : 'Are you sure you want to clear your selected mutual funds and NSE indices from the custom list?'}
             </p>
 
             <div className="flex items-center justify-end gap-3 pt-2">
