@@ -80,6 +80,7 @@ export function App() {
   const [isCustomLoading, setIsCustomLoading] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [error, setError] = useState(null);
+  const [selectedOption, setSelectedOption] = useState('all');
 
   // Selected Fund Modal State
   const [selectedFundModal, setSelectedFundModal] = useState(null);
@@ -212,7 +213,8 @@ export function App() {
     daysList = customDaysList,
     sDate = startDate,
     eDate = endDate,
-    calcDate = calculationDate
+    calcDate = calculationDate,
+    opt = selectedOption
   ) => {
     const requestId = ++activeRequestIdRef.current;
     setIsLoading(true);
@@ -223,6 +225,7 @@ export function App() {
         category: cat,
         search: query,
         plan,
+        option: opt,
         page: p,
         limit: 50,
         days: formattedDays,
@@ -253,7 +256,7 @@ export function App() {
         setIsLoading(false);
       }
     }
-  }, [activeCategory, debouncedSearchQuery, selectedPlan, page, customDaysList, startDate, endDate, calculationDate]);
+  }, [activeCategory, debouncedSearchQuery, selectedPlan, selectedOption, page, customDaysList, startDate, endDate, calculationDate]);
 
   // Load Batch Schemes for Custom Fund List
   const loadCustomFunds = useCallback(async (
@@ -290,8 +293,8 @@ export function App() {
 
   // Initial Load & Effect triggers
   useEffect(() => {
-    loadFunds(activeCategory, debouncedSearchQuery, selectedPlan, page, customDaysList, startDate, endDate, calculationDate);
-  }, [activeCategory, debouncedSearchQuery, selectedPlan, page, customDaysList, startDate, endDate, calculationDate, loadFunds]);
+    loadFunds(activeCategory, debouncedSearchQuery, selectedPlan, page, customDaysList, startDate, endDate, calculationDate, selectedOption);
+  }, [activeCategory, debouncedSearchQuery, selectedPlan, selectedOption, page, customDaysList, startDate, endDate, calculationDate, loadFunds]);
 
   useEffect(() => {
     if (activeTab === 'custom') {
@@ -575,6 +578,11 @@ export function App() {
                   searchQuery={searchQuery}
                   setSearchQuery={(q) => {
                     setSearchQuery(q);
+                    setPage(1);
+                  }}
+                  selectedSchemeOption={selectedOption}
+                  onSelectSchemeOption={(opt) => {
+                    setSelectedOption(opt);
                     setPage(1);
                   }}
                   meta={meta}

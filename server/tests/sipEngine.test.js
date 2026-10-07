@@ -78,7 +78,7 @@ console.log('\n[Test 2] 1-Year (12 Monthly installments) SIP Return & XIRR');
   console.log(`✓ PASS: 12 installments calculated. 10k SIP XIRR = ${result10k.sipXirr}%, 20k SIP XIRR = ${result20k.sipXirr}% (Identical)`);
 }
 
-// TEST 3: Weekend / Holiday NAV Lookup Fallback
+// TEST 3: Weekend / Holiday NAV Lookup Fallback (Retrace back to preceding business day)
 console.log('\n[Test 3] Non-trading day / Weekend NAV Lookup');
 {
   const testNavs = [
@@ -87,12 +87,12 @@ console.log('\n[Test 3] Non-trading day / Weekend NAV Lookup');
     { date: '25-Sep-2026', nav: 105, dateObj: new Date(2026, 8, 25) }  // Friday (26 & 27 are Sat/Sun)
   ];
 
-  // Requesting Sunday 27-Sep-2026: Should look forward to Monday 28-Sep-2026
+  // Requesting Sunday 27-Sep-2026: Should retrace back to preceding Friday 25-Sep-2026
   const targetSunday = new Date(2026, 8, 27);
   const matched = findApplicableNav(testNavs, targetSunday, new Date(2026, 8, 29));
-  assert.strictEqual(matched.navDate, '28-Sep-2026', 'Weekend date should resolve to next business day Monday');
-  assert.strictEqual(matched.nav, 108);
-  console.log('✓ PASS: Sunday 27-Sep correctly allotted at Monday 28-Sep NAV (108)');
+  assert.strictEqual(matched.navDate, '25-Sep-2026', 'Weekend date should retrace back to preceding business day Friday');
+  assert.strictEqual(matched.nav, 105);
+  console.log('✓ PASS: Sunday 27-Sep correctly retraced back to Friday 25-Sep NAV (105)');
 }
 
 // TEST 4: Insufficient NAV History Detection (Section 15)

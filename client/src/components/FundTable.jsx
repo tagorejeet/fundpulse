@@ -21,7 +21,9 @@ const FundTable = ({
   onToggleSelectAllPage,
   onSelectFund,
   searchQuery = '',
-  setSearchQuery
+  setSearchQuery,
+  selectedSchemeOption = 'all',
+  onSelectSchemeOption
 }) => {
   const [sortField, setSortField] = useState('displayName');
   const [sortOrder, setSortOrder] = useState('asc');
@@ -106,23 +108,41 @@ const FundTable = ({
     <div className="space-y-4 my-4">
       {/* Top Search & Filter Bar */}
       <div className="flex flex-col sm:flex-row items-center justify-between gap-3">
-        <div className="relative w-full sm:w-96">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
-          <input
-            type="text"
-            placeholder="Search all Indian mutual fund schemes..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full pl-9 pr-9 py-2 text-xs font-medium rounded-xl bg-slate-900/90 text-white placeholder-slate-500 border border-slate-800 focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500 transition-all"
-          />
-          {searchQuery && (
-            <button
-              onClick={() => setSearchQuery('')}
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white"
+        <div className="flex items-center gap-2.5 w-full sm:w-auto">
+          {/* Search Box */}
+          <div className="relative flex-1 sm:w-80">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+            <input
+              type="text"
+              placeholder="Search all Indian mutual fund schemes..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full pl-9 pr-9 py-2 text-xs font-medium rounded-xl bg-slate-900/90 text-white placeholder-slate-500 border border-slate-800 focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500 transition-all"
+            />
+            {searchQuery && (
+              <button
+                onClick={() => setSearchQuery('')}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white"
+              >
+                <XCircle className="h-4 w-4" />
+              </button>
+            )}
+          </div>
+
+          {/* Scheme Option Dropdown (Growth / Bonus Option / IDCW) */}
+          <div className="relative shrink-0">
+            <select
+              value={selectedSchemeOption || 'all'}
+              onChange={(e) => onSelectSchemeOption && onSelectSchemeOption(e.target.value)}
+              className="px-3 py-2 text-xs font-semibold rounded-xl bg-slate-900/90 text-white border border-slate-800 hover:border-slate-700 focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500 cursor-pointer transition-all shadow-sm"
+              title="Filter by option: Growth, Bonus Option, IDCW"
             >
-              <XCircle className="h-4 w-4" />
-            </button>
-          )}
+              <option value="all">All Options</option>
+              <option value="growth">Growth</option>
+              <option value="bonus">Bonus Option</option>
+              <option value="idcw">IDCW</option>
+            </select>
+          </div>
         </div>
 
         <div className="flex items-center gap-3 w-full sm:w-auto justify-between sm:justify-end flex-wrap">

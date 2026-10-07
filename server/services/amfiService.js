@@ -295,10 +295,14 @@ class AmfiService {
 
         logger.info(`Retrieved ${rawList.length} total raw schemes from master source.`);
 
-        // Filter Growth option schemes
-        const growthList = rawList.filter(s => 
-          s.schemeName && s.schemeName.toLowerCase().includes('growth')
-        );
+        // Helper to determine scheme option type (Growth / Bonus / IDCW)
+        const determineSchemeOption = (name) => {
+          if (!name) return 'growth';
+          const lower = name.toLowerCase();
+          if (lower.includes('bonus')) return 'bonus';
+          if (lower.includes('idcw') || lower.includes('dividend') || lower.includes('div')) return 'idcw';
+          return 'growth';
+        };
 
         const pairedMap = new Map();
 
@@ -323,6 +327,7 @@ class AmfiService {
             amfiSchemeName: allowItem.amfiSchemeName,
             amcName: allowItem.amcName,
             category: allowItem.category,
+            schemeOption: determineSchemeOption(allowItem.displayName),
             subCategoryId: allowItem.subCategoryId,
             regularSchemeCode: allowItem.regularSchemeCode || null,
             directSchemeCode: allowItem.directSchemeCode || null,
@@ -348,8 +353,9 @@ class AmfiService {
           if (item.amfiSchemeName) cleanNameToItemMap.set(cleanSchemeName(item.amfiSchemeName), item);
         });
 
-        // 2. Pair remaining growth schemes dynamically across all AMCs
-        growthList.forEach(s => {
+        // 2. Pair schemes dynamically across all AMCs and option types (Growth, Bonus, IDCW)
+        rawList.forEach(s => {
+          if (!s.schemeName || !s.schemeCode) return;
           const name = s.schemeName.trim();
           const isDirect = name.toLowerCase().includes('direct');
           const code = Number(s.schemeCode);
@@ -390,6 +396,7 @@ class AmfiService {
             const amcParts = baseName.split(' ');
             const amcName = amcParts.length > 2 ? `${amcParts[0]} ${amcParts[1]} Mutual Fund` : 'Mutual Fund';
             const cat = categorizeScheme('', baseName);
+            const schemeOption = determineSchemeOption(baseName);
 
             const match = findAmfiMatch(baseName);
             const aumVal = match ? match.dailyAUM : null;
@@ -400,6 +407,7 @@ class AmfiService {
               amfiSchemeName: baseName,
               amcName,
               category: cat,
+              schemeOption,
               subCategoryId: 0,
               regularSchemeCode: isDirect ? null : code,
               directSchemeCode: isDirect ? code : null,
@@ -720,7 +728,7 @@ class AmfiService {
   /**
    * Get filtered and paginated schemes with calculated returns
    */
-  async getFunds({ category = 'all', search = '', plan = 'regular', page = 1, limit = 50, days, customDays = '33,50,67', startDate = null, endDate = null, asOfDate = null }) {
+  async getFunds({ category = 'all', search = '', plan = 'regular', option = 'all', page = 1, limit = 50, days, customDays = '33,50,67', startDate = null, endDate = null, asOfDate = null }) {
     await this.initializeMasterRegistry();
 
     const daysParam = days || customDays;
@@ -735,6 +743,24 @@ class AmfiService {
         s.category.toLowerCase() === catLower ||
         s.category.toLowerCase().replace(/[^a-z0-9]+/g, '-') === catLower
       );
+    }
+
+    // Scheme Option Filter (all | growth | bonus | idcw)
+    if (option && option.trim().toLowerCase() !== 'all') {
+      const optLower = option.trim().toLowerCase();
+      filtered = filtered.filter(s => {
+        const sOpt = s.schemeOption || (s.displayName && /bonus/i.test(s.displayName) ? 'bonus' : /(idcw|dividend|div)/i.test(s.displayName) ? 'idcw' : 'growth');
+        if (optLower === 'bonus') {
+          return sOpt === 'bonus' || (s.displayName && /bonus/i.test(s.displayName));
+        }
+        if (optLower === 'idcw') {
+          return sOpt === 'idcw' || (s.displayName && /(idcw|dividend|div)/i.test(s.displayName));
+        }
+        if (optLower === 'growth') {
+          return sOpt === 'growth' || (s.displayName && /growth/i.test(s.displayName));
+        }
+        return true;
+      });
     }
 
     // Fuzzy / Typo-tolerant Search Filter
@@ -759,6 +785,7 @@ class AmfiService {
           displayName: scheme.displayName,
           amfiSchemeName: scheme.amfiSchemeName,
           category: scheme.category,
+          schemeOption: scheme.schemeOption,
           subCategoryId: scheme.subCategoryId,
           amcName: scheme.amcName,
           benchmark: scheme.benchmark,

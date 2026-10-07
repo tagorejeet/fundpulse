@@ -11,13 +11,14 @@ const logger = require('../utils/logger');
  */
 const getFunds = async (req, res) => {
   try {
-    const { category, search, plan = 'regular', page = 1, limit = 50, days, customDays, startDate, endDate, asOfDate, calculationDate, date } = req.query;
+    const { category, search, plan = 'regular', option = 'all', page = 1, limit = 50, days, customDays, startDate, endDate, asOfDate, calculationDate, date } = req.query;
     const resolvedAsOfDate = asOfDate || calculationDate || date || null;
     
     const result = await amfiService.getFunds({
       category,
       search,
       plan,
+      option,
       page,
       limit,
       days: days || customDays,

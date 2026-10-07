@@ -147,12 +147,12 @@ function calculateXIRR(cashFlows, guess = 0.1) {
 
 /**
  * Find nearest applicable NAV for a target date
- * Standard Indian MF Rule:
+ * Rule:
  * 1. Exact match on targetDate
- * 2. If weekend/holiday, next business day NAV
- * 3. If next business day > calculationDate, nearest preceding business day NAV
+ * 2. If targetDate is a weekend or holiday, retrace back to the previous working date (latest business day <= targetDate)
+ * 3. Fallback to earliest inception NAV if targetDate is just before fund inception
  * 
- * @param {Array<{date: string, nav: string|number, dateObj: Date}>} navRecords Sorted descending by date
+ * @param {Array<{date: string, nav: string|number, dateObj: Date}>} navRecords Sorted descending by date (newest first)
  * @param {Date} targetDate 
  * @param {Date} maxAllowedDate 
  */
@@ -162,7 +162,7 @@ function findApplicableNav(navRecords, targetDate, maxAllowedDate) {
   const targetTime = targetDate.getTime();
   const maxTime = maxAllowedDate ? maxAllowedDate.getTime() : Infinity;
 
-  // Find exact match
+  // 1. Exact match on targetDate
   for (let i = 0; i < navRecords.length; i++) {
     const rec = navRecords[i];
     if (rec.dateObj.getFullYear() === targetDate.getFullYear() &&
@@ -180,31 +180,8 @@ function findApplicableNav(navRecords, targetDate, maxAllowedDate) {
 
   const maxDiffMs = 15 * 24 * 3600 * 1000; // max 15 days holiday/weekend shift
 
-  // Look for next available business day (smallest date >= targetDate and <= maxAllowedDate)
-  let nextRecord = null;
-  for (let i = navRecords.length - 1; i >= 0; i--) {
-    const rec = navRecords[i];
-    const t = rec.dateObj.getTime();
-    if (t >= targetTime && t <= maxTime) {
-      if (t - targetTime <= maxDiffMs) {
-        nextRecord = rec;
-      }
-      break;
-    }
-  }
-
-  if (nextRecord) {
-    return {
-      record: nextRecord,
-      nav: Number(nextRecord.nav),
-      navDate: nextRecord.date,
-      navDateObj: nextRecord.dateObj,
-      isExact: false,
-      reason: 'Next available business day'
-    };
-  }
-
-  // If no future date available before maxAllowedDate, pick closest preceding date <= targetDate
+  // 2. Retrace back to previous working date (latest business day on or before targetDate, never forward)
+  // navRecords is sorted descending (latest first), so the first record with t <= targetTime is the closest preceding business day
   for (let i = 0; i < navRecords.length; i++) {
     const rec = navRecords[i];
     const t = rec.dateObj.getTime();
@@ -223,7 +200,20 @@ function findApplicableNav(navRecords, targetDate, maxAllowedDate) {
     }
   }
 
-  // If no NAV found within 15 days window, do not invent or substitute ancient NAV
+  // 3. Fallback: if targetDate is before earliest recorded NAV in history by just a few days,
+  // pick the earliest available record within maxDiffMs
+  const earliest = navRecords[navRecords.length - 1];
+  if (earliest && earliest.dateObj.getTime() >= targetTime && (earliest.dateObj.getTime() - targetTime <= maxDiffMs)) {
+    return {
+      record: earliest,
+      nav: Number(earliest.nav),
+      navDate: earliest.date,
+      navDateObj: earliest.dateObj,
+      isExact: false,
+      reason: 'Earliest inception business day'
+    };
+  }
+
   return null;
 }
 
@@ -231,9 +221,13 @@ function findApplicableNav(navRecords, targetDate, maxAllowedDate) {
  * Generate monthly SIP installment dates going backwards from calculation date
  * For T years, generates exactly T * 12 monthly installments
  * 
+ * If the scheduled installment day in the calculation month has already occurred on or before calculationDate,
+ * the calculation starts with the current month (endMonthOffset = 0).
+ * Otherwise, if the day in the current month has not occurred yet, it starts from the previous month (endMonthOffset = -1).
+ * 
  * @param {Date} calculationDate 
  * @param {number} years T (1, 2, 3, 5, 10)
- * @param {number} preferredSipDay (1 to 28, or day of calculation date)
+ * @param {number} preferredSipDay (1 to 31, or day of calculation date)
  * @returns {Array<Date>} Sorted chronologically (oldest to latest)
  */
 function generateMonthlySipDates(calculationDate, years, preferredSipDay = null) {
@@ -246,19 +240,25 @@ function generateMonthlySipDates(calculationDate, years, preferredSipDay = null)
 
   const sipDay = preferredSipDay ? Math.min(31, Math.max(1, preferredSipDay)) : Math.min(31, calcDay);
 
-  for (let i = totalMonths; i >= 1; i--) {
-    let monthOffset = calcMonth - i;
-    let yearOffset = calcYear;
-    while (monthOffset < 0) {
-      monthOffset += 12;
-      yearOffset -= 1;
-    }
+  // Check if the SIP installment for the calculation month has already occurred on or before calculationDate
+  const maxDaysInCalcMonth = new Date(calcYear, calcMonth + 1, 0).getDate();
+  const scheduledDayInCalcMonth = Math.min(sipDay, maxDaysInCalcMonth);
+  const scheduledDateInCalcMonth = new Date(calcYear, calcMonth, scheduledDayInCalcMonth);
 
-    const maxDaysInMonth = new Date(yearOffset, monthOffset + 1, 0).getDate();
-    const day = Math.min(sipDay, maxDaysInMonth);
+  // If scheduled installment date in the calculation month is <= calculationDate,
+  // the latest installment is in the calculation month (offset = 0).
+  // Otherwise, the latest installment is in the previous month (offset = -1).
+  const endMonthOffset = (scheduledDateInCalcMonth.getTime() <= calculationDate.getTime()) ? 0 : -1;
 
-    const installmentDate = new Date(yearOffset, monthOffset, day);
-    dates.push(installmentDate);
+  for (let step = totalMonths - 1; step >= 0; step--) {
+    const relativeMonth = endMonthOffset - step;
+    const d = new Date(calcYear, calcMonth + relativeMonth, 1);
+    const y = d.getFullYear();
+    const m = d.getMonth();
+    const maxDays = new Date(y, m + 1, 0).getDate();
+    const day = Math.min(sipDay, maxDays);
+
+    dates.push(new Date(y, m, day));
   }
 
   dates.sort((a, b) => a.getTime() - b.getTime());
