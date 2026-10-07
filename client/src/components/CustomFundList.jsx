@@ -180,10 +180,10 @@ export const CustomFundList = ({
   }, [funds]);
 
   // Export handlers
-  const handleExportCustomList = () => {
+  const handleExportCustomList = async () => {
     const exportableAmfi = funds.filter(f => checkedForExportIds.has(f.id));
     const exportableNse = selectedNseIndicesList.filter(i => checkedNseExportIds.has(i.id));
-    exportCustomListToExcel({
+    await exportCustomListToExcel({
       funds: exportableAmfi,
       nseIndices: exportableNse,
       plan: selectedPlan,
@@ -196,16 +196,16 @@ export const CustomFundList = ({
     setExportMenuOpen(false);
   };
 
-  const handleExportNseOnly = () => {
+  const handleExportNseOnly = async () => {
     const exportableNse = selectedNseIndicesList.filter(i => checkedNseExportIds.has(i.id));
-    exportNseListToExcel(exportableNse, calculationDate);
+    await exportNseListToExcel(exportableNse, calculationDate);
     setExportMenuOpen(false);
   };
 
-  const handleExportEverything = () => {
+  const handleExportEverything = async () => {
     const exportableAmfi = funds.filter(f => checkedForExportIds.has(f.id));
     const exportableNse = selectedNseIndicesList.filter(i => checkedNseExportIds.has(i.id));
-    exportEverythingToExcel({
+    await exportEverythingToExcel({
       funds: exportableAmfi,
       nseIndices: exportableNse,
       plan: selectedPlan,
@@ -251,22 +251,23 @@ export const CustomFundList = ({
               onClick={() => setExportMenuOpen(!exportMenuOpen)}
               disabled={checkedAmfiCount === 0 && checkedNseCount === 0}
               className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white font-semibold text-xs transition-all shadow-lg shadow-emerald-600/20"
+              title="Download Excel in exact Suggestion Sheet format"
             >
               <FileSpreadsheet className="w-4 h-4" />
-              <span>Export Excel ({checkedAmfiCount + checkedNseCount})</span>
+              <span>Import / Export Excel ({checkedAmfiCount + checkedNseCount})</span>
               <ChevronDown className="w-3.5 h-3.5 ml-0.5" />
             </button>
 
             {exportMenuOpen && (
-              <div className="absolute right-0 mt-2 w-64 rounded-xl bg-slate-900 border border-slate-700 shadow-2xl z-30 overflow-hidden py-1.5 animate-scale-up font-sans">
+              <div className="absolute right-0 mt-2 w-72 rounded-xl bg-slate-900 border border-slate-700 shadow-2xl z-30 overflow-hidden py-1.5 animate-scale-up font-sans">
                 <button
                   onClick={handleExportCustomList}
                   className="w-full text-left px-4 py-2.5 text-xs text-slate-200 hover:bg-slate-800 hover:text-white flex items-start gap-2.5 transition-colors"
                 >
                   <Download className="w-4 h-4 text-emerald-400 mt-0.5 shrink-0" />
                   <div>
-                    <div className="font-semibold">Download Custom List</div>
-                    <div className="text-[10px] text-slate-400">AMFI Mutual Funds + NSE Indices (2 Sheets)</div>
+                    <div className="font-semibold text-emerald-300">Download Suggestion Sheet (Import Excel)</div>
+                    <div className="text-[10px] text-slate-400 mt-0.5">Exact "Our Suggestion Sheet" format with Times New Roman & dynamic categories</div>
                   </div>
                 </button>
 
@@ -277,8 +278,8 @@ export const CustomFundList = ({
                 >
                   <TrendingUp className="w-4 h-4 text-brand-400 mt-0.5 shrink-0" />
                   <div>
-                    <div className="font-semibold">Download NSE List</div>
-                    <div className="text-[10px] text-slate-400">Only selected NSE Indices</div>
+                    <div className="font-semibold">Download NSE Indices</div>
+                    <div className="text-[10px] text-slate-400">Only selected NSE Benchmark Indices</div>
                   </div>
                 </button>
 
@@ -289,7 +290,7 @@ export const CustomFundList = ({
                   <Layers className="w-4 h-4 text-purple-400 mt-0.5 shrink-0" />
                   <div>
                     <div className="font-semibold">Download Everything</div>
-                    <div className="text-[10px] text-slate-400">AMFI + NSE + Combined Summary Sheet</div>
+                    <div className="text-[10px] text-slate-400">Suggestion Sheet + NSE Indices + Combined Summary</div>
                   </div>
                 </button>
               </div>
