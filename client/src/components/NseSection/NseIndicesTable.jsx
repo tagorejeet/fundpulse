@@ -19,6 +19,7 @@ const NseIndicesTable = ({
   indices = [],
   isLoading = false,
   selectedDate = '',
+  onSelectDate,
   mode = 'yearly',
   customDaysList = [33, 50, 67],
   source = 'NSE India / NSE Indices',
@@ -32,12 +33,70 @@ const NseIndicesTable = ({
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedAuditIndex, setSelectedAuditIndex] = useState(null);
+  const [auditTab, setAuditTab] = useState(mode === 'days' ? 'days' : 'yearly');
+  const todayStr = useMemo(() => new Date().toISOString().split('T')[0], []);
+
+  // Helper to convert date to YYYY-MM-DD for date input
+  const toInputDateFormat = (dateStr) => {
+    if (!dateStr) return '';
+    if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return dateStr;
+    const parts = String(dateStr).split(/[-/]/);
+    if (parts.length === 3) {
+      if (parts[0].length === 2 && parts[2].length === 4) {
+        // DD-MM-YYYY -> YYYY-MM-DD
+        return `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
+      }
+    }
+    return '';
+  };
+
+  // Helper to convert date to DD-MM-YYYY for display
+  const toDisplayDateFormat = (dateStr) => {
+    if (!dateStr) return '';
+    if (/^\d{2}-\d{2}-\d{4}$/.test(dateStr)) return dateStr;
+    const parts = String(dateStr).split(/[-/]/);
+    if (parts.length === 3) {
+      if (parts[0].length === 4) {
+        // YYYY-MM-DD -> DD-MM-YYYY
+        return `${parts[2].padStart(2, '0')}-${parts[1].padStart(2, '0')}-${parts[0]}`;
+      }
+    }
+    return dateStr;
+  };
+
+  const getDayOfWeekInfo = (dateStr) => {
+    if (!dateStr) return { dayName: '', fullDayName: '', isWeekend: false };
+    try {
+      const parts = String(dateStr).split(/[-/]/);
+      let d;
+      if (parts.length === 3) {
+        if (parts[0].length === 4) {
+          d = new Date(parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, parseInt(parts[2], 10));
+        } else {
+          d = new Date(parseInt(parts[2], 10), parseInt(parts[1], 10) - 1, parseInt(parts[0], 10));
+        }
+        const dayIdx = d.getDay();
+        return {
+          dayName: d.toLocaleDateString('en-US', { weekday: 'short' }),
+          fullDayName: d.toLocaleDateString('en-US', { weekday: 'long' }),
+          isWeekend: dayIdx === 0 || dayIdx === 6
+        };
+      }
+    } catch (e) {}
+    return { dayName: '', fullDayName: '', isWeekend: false };
+  };
 
   const daysListToUse = useMemo(() => {
     if (customDaysList && customDaysList.length > 0) return customDaysList;
     if (indices && indices[0]?.customDaysList) return indices[0].customDaysList;
     return [33, 50, 67];
   }, [customDaysList, indices]);
+
+  // Keep audit tab in sync if mode changes
+  const handleOpenAuditModal = (idx) => {
+    setSelectedAuditIndex(idx);
+    setAuditTab(mode === 'days' ? 'days' : 'yearly');
+  };
 
   // Filter indices based on search query
   const filteredIndices = useMemo(() => {
@@ -129,7 +188,7 @@ const NseIndicesTable = ({
               onClick={onRefreshNse}
               disabled={isLoading}
               className="p-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white transition-all disabled:opacity-50"
-              title="Refresh NSE Data"
+              title="Refresh NSE Data (Resets to Today's Values)"
             >
               <RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin text-brand-400' : ''}`} />
             </button>
@@ -137,21 +196,58 @@ const NseIndicesTable = ({
         </div>
       </div>
 
-      {/* Date Alignment & Notice Banner */}
-      <div className="p-4 rounded-xl bg-slate-900/90 border border-slate-800 shadow-lg flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div className="flex flex-wrap items-center gap-4 text-xs">
-          <div className="flex items-center gap-2 bg-brand-500/10 border border-brand-500/20 px-3 py-1.5 rounded-lg text-brand-300 font-medium">
-            <Calendar className="w-4 h-4 text-brand-400" />
-            <span>Selected Date: <strong className="text-white font-bold">{selectedDate || 'Today'}</strong></span>
+      {/* Date Alignment & Interactive Calendar Picker Banner */}
+      <div className="p-4 rounded-xl bg-slate-900/90 border border-slate-800 shadow-lg flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+        <div className="flex flex-wrap items-center gap-3 text-xs">
+          {/* Calendar Date Picker Input */}
+          <div className="flex items-center gap-2 bg-slate-950 px-3 py-1.5 rounded-xl border border-brand-500/30 shadow-inner">
+            <Calendar className="w-4 h-4 text-brand-400 shrink-0" />
+            <span className="text-slate-400 font-medium">Valuation Date:</span>
+            <input
+              type="date"
+              value={toInputDateFormat(selectedDate) || todayStr}
+              max={todayStr}
+              onChange={(e) => onSelectDate && onSelectDate(e.target.value)}
+              className="px-2 py-0.5 rounded-lg text-xs font-bold bg-slate-900 text-white border border-slate-700 focus:outline-none focus:border-brand-500 cursor-pointer"
+              title="Pick valuation date for NSE returns calculation"
+            />
+            {(() => {
+              const info = getDayOfWeekInfo(selectedDate || todayStr);
+              if (!info.dayName) return null;
+              return (
+                <span
+                  className={`px-2 py-0.5 rounded text-[11px] font-bold ${
+                    info.isWeekend
+                      ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
+                      : 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+                  }`}
+                  title={info.isWeekend ? `${info.fullDayName} (Weekend / Non-Trading Day)` : `${info.fullDayName} (Trading Day)`}
+                >
+                  {info.dayName} {info.isWeekend ? '• Closed' : '• Trading'}
+                </span>
+              );
+            })()}
+
+            {toInputDateFormat(selectedDate) && toInputDateFormat(selectedDate) !== todayStr && (
+              <button
+                type="button"
+                onClick={() => onSelectDate && onSelectDate(todayStr)}
+                className="px-2 py-0.5 rounded-md text-[11px] font-bold bg-brand-600 hover:bg-brand-500 text-white transition-all shadow-sm"
+                title="Reset Valuation Date to Today"
+              >
+                Today
+              </button>
+            )}
           </div>
 
-          <div className="flex items-center gap-2 bg-slate-800/80 border border-slate-700/80 px-3 py-1.5 rounded-lg text-slate-300 font-medium">
-            <ShieldCheck className="w-4 h-4 text-emerald-400" />
-            <span>Actual NSE Trading Date: <strong className="text-emerald-400 font-bold">{commonDataDate}</strong></span>
+          {/* Actual NSE Trading Date Badge */}
+          <div className="flex items-center gap-2 bg-slate-800/80 border border-slate-700/80 px-3 py-1.5 rounded-xl text-slate-300 font-medium">
+            <ShieldCheck className="w-4 h-4 text-emerald-400 shrink-0" />
+            <span>Trading Session: <strong className="text-emerald-400 font-bold font-mono">{commonDataDate}</strong></span>
           </div>
 
-          <span className="text-slate-400 text-[11px] hidden lg:inline">
-            (Weekend / non-trading days automatically fallback to latest trading date ≤ selected date)
+          <span className="text-slate-500 text-[11px] hidden xl:inline">
+            (Weekend / non-trading days automatically fallback to latest trading session ≤ chosen date)
           </span>
         </div>
 
@@ -217,7 +313,7 @@ const NseIndicesTable = ({
                   </>
                 )}
 
-                <th className="p-3.5 text-center min-w-[120px]">Data Date</th>
+                <th className="p-3.5 text-center min-w-[140px]">Valuation Date</th>
                 <th className="p-3.5 text-center w-24">Audit Details</th>
               </tr>
             </thead>
@@ -309,17 +405,21 @@ const NseIndicesTable = ({
                         </>
                       )}
 
-                      {/* Data Date */}
-                      <td className="p-3.5 text-center text-slate-300 text-xs">
-                        <span className="px-2 py-0.5 rounded bg-slate-800/80 border border-slate-700/60 font-mono">
-                          {idx.dataDate || 'N/A'}
-                        </span>
+                      {/* Valuation Date & Effective Trading Date */}
+                      <td className="p-3.5 text-center text-xs font-sans">
+                        <div className="font-bold text-white font-mono text-[13px]">
+                          {idx.selectedDate || toDisplayDateFormat(selectedDate) || 'Today'}
+                        </div>
+                        <div className="text-[10px] text-slate-400 font-mono mt-0.5 flex items-center justify-center gap-1">
+                          <span>Trading:</span>
+                          <span className="text-emerald-400 font-semibold">{idx.dataDate || 'N/A'}</span>
+                        </div>
                       </td>
 
                       {/* Audit Details Button */}
                       <td className="p-3.5 text-center font-sans">
                         <button
-                          onClick={() => setSelectedAuditIndex(idx)}
+                          onClick={() => handleOpenAuditModal(idx)}
                           className="px-2.5 py-1 text-[11px] font-medium rounded-lg bg-slate-800 hover:bg-brand-600/30 text-slate-300 hover:text-white border border-slate-700 hover:border-brand-500/40 transition-all flex items-center justify-center gap-1 mx-auto"
                           title="View mathematical audit & formula breakdown"
                         >
@@ -372,67 +472,163 @@ const NseIndicesTable = ({
               {/* Context Summary Cards */}
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <div className="p-3 rounded-xl bg-slate-950 border border-slate-800">
-                  <div className="text-[10px] text-slate-500 uppercase tracking-wider font-semibold">Selected Valuation Date</div>
-                  <div className="text-sm font-bold text-white font-mono mt-0.5">{selectedAuditIndex.selectedDate}</div>
+                  <div className="text-[10px] text-slate-500 uppercase tracking-wider font-semibold">Chosen Calendar Date</div>
+                  <div className="text-sm font-bold text-white font-mono mt-0.5 flex items-center gap-2">
+                    <span>{selectedAuditIndex.selectedDate || toDisplayDateFormat(selectedDate) || 'Today'}</span>
+                    {(() => {
+                      const dayInfo = getDayOfWeekInfo(selectedAuditIndex.selectedDate || selectedDate);
+                      return dayInfo.dayName ? (
+                        <span className="text-[10px] px-1.5 py-0.2 rounded font-sans font-bold bg-brand-500/20 text-brand-300">
+                          {dayInfo.dayName}
+                        </span>
+                      ) : null;
+                    })()}
+                  </div>
                 </div>
 
                 <div className="p-3 rounded-xl bg-slate-950 border border-slate-800">
-                  <div className="text-[10px] text-slate-500 uppercase tracking-wider font-semibold">Actual NSE Trading Date</div>
-                  <div className="text-sm font-bold text-emerald-400 font-mono mt-0.5">{selectedAuditIndex.dataDate}</div>
+                  <div className="text-[10px] text-slate-500 uppercase tracking-wider font-semibold">Effective Trading Date</div>
+                  <div className="text-sm font-bold text-emerald-400 font-mono mt-0.5 flex items-center gap-2">
+                    <span>{selectedAuditIndex.dataDate}</span>
+                    {(() => {
+                      const dayInfo = getDayOfWeekInfo(selectedAuditIndex.dataDate);
+                      return dayInfo.dayName ? (
+                        <span className="text-[10px] px-1.5 py-0.2 rounded font-sans font-bold bg-emerald-500/20 text-emerald-300">
+                          {dayInfo.dayName}
+                        </span>
+                      ) : null;
+                    })()}
+                  </div>
                 </div>
 
                 <div className="p-3 rounded-xl bg-slate-950 border border-slate-800">
                   <div className="text-[10px] text-slate-500 uppercase tracking-wider font-semibold">Terminal Value (VT)</div>
-                  <div className="text-sm font-bold text-white font-mono mt-0.5">₹{selectedAuditIndex.currentValue?.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</div>
+                  <div className="text-sm font-bold text-white font-mono mt-0.5">
+                    ₹{selectedAuditIndex.currentValue?.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                  </div>
                 </div>
               </div>
 
-              {/* Exact Formula Notice */}
-              <div className="p-3.5 rounded-xl bg-brand-500/10 border border-brand-500/20 text-xs text-brand-300">
-                <div className="font-semibold text-brand-200 mb-1 flex items-center gap-1.5">
-                  <Info className="w-4 h-4 text-brand-400" />
-                  Standard Annualized Return Formula Applied:
-                </div>
-                <div className="font-mono bg-slate-950/70 p-2 rounded border border-brand-500/20 text-white text-[11px] overflow-x-auto">
-                  Annualized Return = 4 × ((VT / V0)^(1 / (4 × T)) - 1) × 100
-                </div>
+              {/* View Switcher: Yearly vs Day Calculation */}
+              <div className="flex items-center gap-2 p-1 bg-slate-950 rounded-xl border border-slate-800 w-fit">
+                <button
+                  onClick={() => setAuditTab('yearly')}
+                  className={`px-3 py-1 rounded-lg text-xs font-bold transition-all ${
+                    auditTab === 'yearly'
+                      ? 'bg-brand-600 text-white shadow-sm'
+                      : 'text-slate-400 hover:text-white'
+                  }`}
+                >
+                  Yearly Returns (1Y - 10Y)
+                </button>
+                <button
+                  onClick={() => setAuditTab('days')}
+                  className={`px-3 py-1 rounded-lg text-xs font-bold transition-all ${
+                    auditTab === 'days'
+                      ? 'bg-brand-600 text-white shadow-sm'
+                      : 'text-slate-400 hover:text-white'
+                  }`}
+                >
+                  Day Calculations ({daysListToUse.join('D, ')}D)
+                </button>
               </div>
 
-              {/* Audit Table for 1Y, 2Y, 3Y, 5Y, 10Y */}
-              <div className="rounded-xl border border-slate-800 overflow-hidden">
-                <table className="w-full text-xs text-left">
-                  <thead className="bg-slate-950 text-slate-400 uppercase font-semibold border-b border-slate-800">
-                    <tr>
-                      <th className="p-3">Period</th>
-                      <th className="p-3">Years (T)</th>
-                      <th className="p-3">Target Date</th>
-                      <th className="p-3">Trading Date</th>
-                      <th className="p-3 text-right">Base NAV (V0)</th>
-                      <th className="p-3 text-right">Result (%)</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-800/80 font-mono">
-                    {['1Y', '2Y', '3Y', '5Y', '10Y'].map((label) => {
-                      const item = selectedAuditIndex.auditDetails?.[label];
-                      if (!item) return null;
-                      return (
-                        <tr key={label} className="hover:bg-slate-800/30">
-                          <td className="p-3 font-bold text-white">{label}</td>
-                          <td className="p-3 text-slate-300">{item.T}</td>
-                          <td className="p-3 text-slate-400">{item.targetDate}</td>
-                          <td className="p-3 text-emerald-400">{item.actualDate || 'N/A'}</td>
-                          <td className="p-3 text-right text-white">
-                            {item.V0 ? `₹${item.V0.toLocaleString('en-IN', { minimumFractionDigits: 2 })}` : 'N/A'}
-                          </td>
-                          <td className="p-3 text-right font-bold">
-                            {formatPct(item.returnPct)}
-                          </td>
+              {/* Day Calculation Audit View */}
+              {auditTab === 'days' ? (
+                <>
+                  <div className="p-3.5 rounded-xl bg-brand-500/10 border border-brand-500/20 text-xs text-brand-300">
+                    <div className="font-semibold text-brand-200 mb-1 flex items-center gap-1.5">
+                      <Info className="w-4 h-4 text-brand-400" />
+                      Day Calculation Annualized Formula Applied:
+                    </div>
+                    <div className="font-mono bg-slate-950/70 p-2 rounded border border-brand-500/20 text-white text-[11px] overflow-x-auto">
+                      Annualized Return = 4 × ((VT / V0)^(365 / (4 × D)) - 1) × 100
+                    </div>
+                  </div>
+
+                  <div className="rounded-xl border border-slate-800 overflow-hidden">
+                    <table className="w-full text-xs text-left">
+                      <thead className="bg-slate-950 text-slate-400 uppercase font-semibold border-b border-slate-800">
+                        <tr>
+                          <th className="p-3">Period</th>
+                          <th className="p-3">Days (D)</th>
+                          <th className="p-3">Target Date</th>
+                          <th className="p-3">Trading Date</th>
+                          <th className="p-3 text-right">Base NAV (V0)</th>
+                          <th className="p-3 text-right">Result (%)</th>
                         </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
+                      </thead>
+                      <tbody className="divide-y divide-slate-800/80 font-mono">
+                        {daysListToUse.map((D) => {
+                          const item = selectedAuditIndex.auditDetails?.[`${D}D`];
+                          if (!item) return null;
+                          return (
+                            <tr key={D} className="hover:bg-slate-800/30">
+                              <td className="p-3 font-bold text-white">{D}D</td>
+                              <td className="p-3 text-slate-300">{D}</td>
+                              <td className="p-3 text-slate-400">{item.targetDate}</td>
+                              <td className="p-3 text-emerald-400">{item.actualDate || 'N/A'}</td>
+                              <td className="p-3 text-right text-white">
+                                {item.V0 ? `₹${item.V0.toLocaleString('en-IN', { minimumFractionDigits: 2 })}` : 'N/A'}
+                              </td>
+                              <td className="p-3 text-right font-bold">
+                                {formatPct(item.returnPct)}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className="p-3.5 rounded-xl bg-brand-500/10 border border-brand-500/20 text-xs text-brand-300">
+                    <div className="font-semibold text-brand-200 mb-1 flex items-center gap-1.5">
+                      <Info className="w-4 h-4 text-brand-400" />
+                      Standard Annualized Return Formula Applied:
+                    </div>
+                    <div className="font-mono bg-slate-950/70 p-2 rounded border border-brand-500/20 text-white text-[11px] overflow-x-auto">
+                      Annualized Return = 4 × ((VT / V0)^(1 / (4 × T)) - 1) × 100
+                    </div>
+                  </div>
+
+                  <div className="rounded-xl border border-slate-800 overflow-hidden">
+                    <table className="w-full text-xs text-left">
+                      <thead className="bg-slate-950 text-slate-400 uppercase font-semibold border-b border-slate-800">
+                        <tr>
+                          <th className="p-3">Period</th>
+                          <th className="p-3">Years (T)</th>
+                          <th className="p-3">Target Date</th>
+                          <th className="p-3">Trading Date</th>
+                          <th className="p-3 text-right">Base NAV (V0)</th>
+                          <th className="p-3 text-right">Result (%)</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-800/80 font-mono">
+                        {['1Y', '2Y', '3Y', '5Y', '10Y'].map((label) => {
+                          const item = selectedAuditIndex.auditDetails?.[label];
+                          if (!item) return null;
+                          return (
+                            <tr key={label} className="hover:bg-slate-800/30">
+                              <td className="p-3 font-bold text-white">{label}</td>
+                              <td className="p-3 text-slate-300">{item.T}</td>
+                              <td className="p-3 text-slate-400">{item.targetDate}</td>
+                              <td className="p-3 text-emerald-400">{item.actualDate || 'N/A'}</td>
+                              <td className="p-3 text-right text-white">
+                                {item.V0 ? `₹${item.V0.toLocaleString('en-IN', { minimumFractionDigits: 2 })}` : 'N/A'}
+                              </td>
+                              <td className="p-3 text-right font-bold">
+                                {formatPct(item.returnPct)}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </>
+              )}
 
               {/* Non-Trading Day Audit Explanation */}
               <div className="text-[11px] text-slate-400 bg-slate-950 p-3 rounded-xl border border-slate-800/80 space-y-1">

@@ -556,7 +556,7 @@ export const CustomFundList = ({
                         <th className="p-3 text-right">10Y</th>
                       </>
                     )}
-                    <th className="p-3 text-center">Data Date</th>
+                    <th className="p-3 text-center min-w-[130px]">Valuation Date</th>
                     <th className="p-3 text-right pr-4">Action</th>
                   </tr>
                 </thead>
@@ -600,10 +600,13 @@ export const CustomFundList = ({
                             <td className="p-3 text-right">{formatPct(idx.return10Yr)}</td>
                           </>
                         )}
-                        <td className="p-3 text-center text-slate-300">
-                          <span className="px-2 py-0.5 rounded bg-slate-800 border border-slate-700/60">
-                            {idx.dataDate || 'N/A'}
-                          </span>
+                        <td className="p-3 text-center text-xs font-sans">
+                          <div className="font-bold text-white font-mono text-[12px]">
+                            {idx.selectedDate || 'Today'}
+                          </div>
+                          <div className="text-[10px] text-slate-400 font-mono mt-0.5">
+                            Trading: <span className="text-emerald-400 font-semibold">{idx.dataDate || 'N/A'}</span>
+                          </div>
                         </td>
                         <td className="p-3 text-right pr-4">
                           <button

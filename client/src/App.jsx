@@ -373,6 +373,12 @@ export function App() {
     let amfiSuccess = false;
     let nseSuccess = false;
 
+    // Reset date to today on refresh so current/today's live values are shown
+    const today = new Date().toISOString().split('T')[0];
+    setCalculationDate(today);
+    setEndDate(today);
+    setPage(1);
+
     try {
       const refreshRes = await triggerRefresh();
       if (refreshRes?.data?.reportDate) {
@@ -390,23 +396,23 @@ export function App() {
     setRefreshStatusMessage('Refreshing NSE data...');
     try {
       await triggerNSERefresh();
-      await loadNseIndices(calculationDate);
+      await loadNseIndices(today, customDaysList, startDate, today);
       nseSuccess = true;
     } catch (err) {
       console.error('NSE refresh error:', err);
     }
 
     try {
-      await loadFunds(activeCategory, searchQuery, selectedPlan, page, customDaysList, startDate, endDate, calculationDate);
+      await loadFunds(activeCategory, searchQuery, selectedPlan, 1, customDaysList, startDate, today, today);
       if (selectedFundIds.size > 0) {
-        await loadCustomFunds(selectedFundIds, selectedPlan, customDaysList, startDate, endDate, calculationDate);
+        await loadCustomFunds(selectedFundIds, selectedPlan, customDaysList, startDate, today, today);
       }
     } catch (err) {
       console.error('Reload error:', err);
     } finally {
       setIsRefreshing(false);
       if (amfiSuccess && nseSuccess) {
-        setRefreshStatusMessage('Data refreshed successfully.');
+        setRefreshStatusMessage('Data refreshed successfully. Showing today\'s values.');
       } else if (amfiSuccess && !nseSuccess) {
         setRefreshStatusMessage('AMFI refreshed successfully. NSE data could not be refreshed.');
       } else if (!amfiSuccess && nseSuccess) {
@@ -416,6 +422,19 @@ export function App() {
       }
       setTimeout(() => setRefreshStatusMessage(null), 5000);
     }
+  };
+
+  const handleRefreshNse = async () => {
+    setIsLoadingNse(true);
+    const today = new Date().toISOString().split('T')[0];
+    setCalculationDate(today);
+    setEndDate(today);
+    try {
+      await triggerNSERefresh();
+    } catch (err) {
+      console.error('NSE refresh error:', err);
+    }
+    await loadNseIndices(today, customDaysList, startDate, today);
   };
 
   const categoryCountsMap = useMemo(() => {
@@ -591,6 +610,7 @@ export function App() {
               indices={nseIndices}
               isLoading={isLoadingNse}
               selectedDate={calculationDate}
+              onSelectDate={handleSelectCalculationDate}
               mode={mode}
               customDaysList={customDaysList}
               source={nseMeta?.source || 'NSE India / NSE Indices'}
@@ -600,7 +620,7 @@ export function App() {
               onToggleSelectIndex={handleToggleSelectNseIndex}
               onToggleSelectAll={handleToggleSelectAllNse}
               onExportNseExcel={handleExportNseExcel}
-              onRefreshNse={() => triggerNSERefresh().then(() => loadNseIndices(calculationDate, customDaysList, startDate, endDate))}
+              onRefreshNse={handleRefreshNse}
             />
           </>
         )}
