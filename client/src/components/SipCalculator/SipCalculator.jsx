@@ -17,11 +17,16 @@ import {
   Info,
   RefreshCw,
   Layers,
-  Check
+  Check,
+  CheckSquare,
+  ArrowRight
 } from 'lucide-react';
 import { calculateSipApi, fetchFunds } from '../../services/api';
 import { exportSipToExcel } from '../../services/excelSipExport';
+import { fuzzyFilterSchemes } from '../../utils/fuzzySearch';
+import { NSE_INDICES } from '../../config/nseConfig';
 import SipDetailModal from './SipDetailModal';
+import SipCustomFundList from './SipCustomFundList';
 
 const SIP_STORAGE_KEY = 'fundpulse_sip_fund_ids';
 const SIP_AMOUNT_KEY = 'fundpulse_sip_amount';
@@ -39,8 +44,18 @@ export const SipCalculator = ({
   customFundIds = new Set(),
   meta,
   selectedPlan = 'regular',
-  onSelectPlan
+  onSelectPlan,
+  initialCalculationDate = '',
+  activeSipTab,
+  onSelectSipTab
 }) => {
+  const [internalViewTab, setInternalViewTab] = useState('calculator');
+  const viewTab = activeSipTab !== undefined ? activeSipTab : internalViewTab;
+  const setViewTab = (t) => {
+    setInternalViewTab(t);
+    if (onSelectSipTab) onSelectSipTab(t);
+  };
+
   // Persistent Selected Fund IDs State
   const [selectedFundIds, setSelectedFundIds] = useState(() => {
     try {
@@ -64,17 +79,25 @@ export const SipCalculator = ({
   const [monthlySip, setMonthlySip] = useState(() => {
     try {
       const saved = localStorage.getItem(SIP_AMOUNT_KEY);
-      if (saved && !isNaN(Number(saved)) && Number(saved) >= 100) {
+      if (saved && !isNaN(Number(saved)) && Number(saved) >= 100 && saved !== '10000') {
         return Number(saved);
       }
     } catch (e) {}
-    return 10000;
+    return 100000;
   });
 
   const [calculationDate, setCalculationDate] = useState(() => {
+    if (initialCalculationDate) return initialCalculationDate;
     const today = new Date();
     return today.toISOString().split('T')[0];
   });
+
+  // Sync calculationDate when initialCalculationDate prop changes
+  useEffect(() => {
+    if (initialCalculationDate) {
+      setCalculationDate(initialCalculationDate);
+    }
+  }, [initialCalculationDate]);
 
   const [sipDay, setSipDay] = useState(() => {
     try {
@@ -86,6 +109,33 @@ export const SipCalculator = ({
     return 25;
   });
 
+  // Helper to get Day of Week name
+  const getDayOfWeekInfo = (dateStr) => {
+    if (!dateStr) return { dayName: '', isWeekend: false };
+    try {
+      const parts = dateStr.split('-');
+      if (parts.length === 3) {
+        const d = new Date(parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, parseInt(parts[2], 10));
+        const dayIdx = d.getDay();
+        const dayName = d.toLocaleDateString('en-US', { weekday: 'long' });
+        return {
+          dayName,
+          isWeekend: dayIdx === 0 || dayIdx === 6
+        };
+      }
+    } catch (e) {}
+    return { dayName: '', isWeekend: false };
+  };
+
+  const getOrdinalSuffix = (num) => {
+    const j = num % 10;
+    const k = num % 100;
+    if (j === 1 && k !== 11) return `${num}st`;
+    if (j === 2 && k !== 12) return `${num}nd`;
+    if (j === 3 && k !== 13) return `${num}rd`;
+    return `${num}th`;
+  };
+
   const [plan, setPlan] = useState(selectedPlan || 'regular');
 
   // Metadata cache for selected funds so display names and categories always show nicely
@@ -93,6 +143,15 @@ export const SipCalculator = ({
     const map = {};
     PRESET_POPULAR_FUNDS.forEach(p => {
       map[p.id] = p;
+    });
+    NSE_INDICES.forEach(idx => {
+      map[idx.id] = {
+        id: idx.id,
+        displayName: `${idx.displayName} (NSE Benchmark)`,
+        category: idx.category,
+        amcName: 'NSE Indices',
+        isNseIndex: true
+      };
     });
     return map;
   });
@@ -201,32 +260,49 @@ export const SipCalculator = ({
     return () => clearTimeout(timer);
   }, [searchQuery, plan]);
 
-  // Combined fund search suggestions (local allFunds + live server API search)
+  // Combined typo-tolerant fund search suggestions (NSE indices + local allFunds + live server API search)
   const searchResults = useMemo(() => {
     if (!searchQuery.trim()) return [];
-    const q = searchQuery.toLowerCase().trim();
     const map = new Map();
+    const qLower = searchQuery.toLowerCase().trim();
 
-    // 1. Check local allFunds
-    if (allFunds) {
-      allFunds
-        .filter(f => 
-          (f.displayName && f.displayName.toLowerCase().includes(q)) ||
-          (f.amfiSchemeName && f.amfiSchemeName.toLowerCase().includes(q)) ||
-          (f.category && f.category.toLowerCase().includes(q)) ||
-          (f.amcName && f.amcName.toLowerCase().includes(q))
-        )
-        .forEach(f => map.set(f.id, f));
+    // 1. Check NSE Indices
+    NSE_INDICES.forEach(idx => {
+      if (
+        idx.id.toLowerCase().includes(qLower) ||
+        idx.displayName.toLowerCase().includes(qLower) ||
+        idx.officialName.toLowerCase().includes(qLower) ||
+        (qLower.includes('nifty') && idx.id.toLowerCase().includes('nifty')) ||
+        (qLower.includes('nse') && idx.source.toLowerCase().includes('nse')) ||
+        (qLower.includes('midcap') && idx.id.toLowerCase().includes('midcap')) ||
+        (qLower.includes('smallcap') && idx.id.toLowerCase().includes('smallcap'))
+      ) {
+        map.set(idx.id, {
+          id: idx.id,
+          displayName: `${idx.displayName} (NSE Benchmark)`,
+          category: idx.category,
+          amcName: 'NSE Indices',
+          isNseIndex: true
+        });
+      }
+    });
+
+    // 2. Fuzzy match local allFunds with typo tolerance
+    if (allFunds && allFunds.length > 0) {
+      const fuzzyLocal = fuzzyFilterSchemes(allFunds, searchQuery);
+      fuzzyLocal.slice(0, 15).forEach(f => {
+        if (!map.has(f.id)) map.set(f.id, f);
+      });
     }
 
-    // 2. Check apiSearchResults
+    // 3. Check apiSearchResults
     apiSearchResults.forEach(f => {
       if (!map.has(f.id)) {
         map.set(f.id, f);
       }
     });
 
-    return Array.from(map.values()).slice(0, 15);
+    return Array.from(map.values()).slice(0, 18);
   }, [searchQuery, allFunds, apiSearchResults]);
 
   // Execute Calculation
@@ -246,9 +322,13 @@ export const SipCalculator = ({
     setCalculationError(null);
 
     try {
+      // Automatically include official NSE benchmark indices so they are calculated and visible in their dedicated benchmark section
+      const nseIds = ['NIFTY 50', 'NIFTY 500', 'NIFTY MIDCAP 150', 'NIFTY SMALLCAP 250'];
+      const combinedIds = Array.from(new Set([...targetIds, ...nseIds]));
+
       const response = await calculateSipApi({
-        ids: targetIds,
-        monthlySip: targetSip,
+        ids: combinedIds,
+        monthlySip: targetSip || 100000,
         calculationDate: targetDate,
         sipDay: targetDay,
         plan: targetPlan
@@ -264,7 +344,8 @@ export const SipCalculator = ({
                 id: r.fundId,
                 displayName: r.displayName,
                 category: r.category,
-                amcName: r.amcName
+                amcName: r.amcName,
+                isNseIndex: r.isNseIndex || r.plan === 'Benchmark'
               };
             }
           });
@@ -278,6 +359,51 @@ export const SipCalculator = ({
       setIsCalculating(false);
     }
   }, [selectedFundIds, monthlySip, calculationDate, sipDay, plan]);
+
+  // Checked state for Excel export (auto pre-checked on results load)
+  const [checkedExportIds, setCheckedExportIds] = useState(new Set());
+  const prevTrackedResultsRef = useRef(new Set());
+
+  useEffect(() => {
+    if (results && results.length > 0) {
+      setCheckedExportIds(prev => {
+        const next = new Set(prev);
+        results.forEach(r => {
+          if (!prevTrackedResultsRef.current.has(r.fundId)) {
+            next.add(r.fundId);
+          }
+        });
+        prevTrackedResultsRef.current = new Set(results.map(r => r.fundId));
+        return next;
+      });
+    }
+  }, [results]);
+
+  const handleToggleExportFund = (fundId) => {
+    setCheckedExportIds(prev => {
+      const next = new Set(prev);
+      if (next.has(fundId)) {
+        next.delete(fundId);
+      } else {
+        next.add(fundId);
+      }
+      return next;
+    });
+  };
+
+  const handleToggleSelectAllFunds = (fundList) => {
+    if (!fundList || fundList.length === 0) return;
+    const allChecked = fundList.every(f => checkedExportIds.has(f.fundId));
+    setCheckedExportIds(prev => {
+      const next = new Set(prev);
+      if (allChecked) {
+        fundList.forEach(f => next.delete(f.fundId));
+      } else {
+        fundList.forEach(f => next.add(f.fundId));
+      }
+      return next;
+    });
+  };
 
   // Run calculation whenever selected funds or plan change
   useEffect(() => {
@@ -316,9 +442,14 @@ export const SipCalculator = ({
   };
 
   const handleExport = () => {
+    const exportable = results.filter(r => checkedExportIds.has(r.fundId));
+    if (exportable.length === 0) {
+      alert('Please select at least one scheme or index checkbox to export.');
+      return;
+    }
     exportSipToExcel({
-      results,
-      monthlySip,
+      results: exportable,
+      monthlySip: monthlySip || 100000,
       calculationDate,
       sipDay,
       plan,
@@ -354,6 +485,20 @@ export const SipCalculator = ({
       return sortOrder === 'asc' ? aVal - bVal : bVal - aVal;
     });
   }, [results, sortField, sortOrder]);
+
+  // Separate Mutual Funds from NSE Benchmark Indices
+  const { mutualFundResults, nseIndexResults } = useMemo(() => {
+    const mf = [];
+    const nse = [];
+    sortedResults.forEach(r => {
+      if (r.isNseIndex || r.plan === 'Benchmark') {
+        nse.push(r);
+      } else {
+        mf.push(r);
+      }
+    });
+    return { mutualFundResults: mf, nseIndexResults: nse };
+  }, [sortedResults]);
 
   const handleSort = (field) => {
     if (sortField === field) {
@@ -424,6 +569,40 @@ export const SipCalculator = ({
           </div>
 
           <div className="flex items-center gap-2 w-full lg:w-auto justify-end flex-wrap">
+            {/* View Mode Toggle: Calculator vs Custom Fund List */}
+            <div className="flex items-center p-1 bg-slate-900/95 rounded-xl border border-slate-700/80 shadow-inner">
+              <button
+                type="button"
+                onClick={() => setViewTab('calculator')}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                  viewTab === 'calculator'
+                    ? 'bg-gradient-to-r from-emerald-600 to-teal-600 text-white shadow-md'
+                    : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
+                }`}
+              >
+                <Calculator className="h-3.5 w-3.5" />
+                <span>Calculator</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setViewTab('custom')}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                  viewTab === 'custom'
+                    ? 'bg-gradient-to-r from-emerald-600 to-teal-600 text-white shadow-md'
+                    : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
+                }`}
+              >
+                <CheckSquare className="h-3.5 w-3.5" />
+                <span>Custom Fund List</span>
+                <span className={`ml-1 px-1.5 py-0.2 rounded-full text-[10px] font-extrabold ${
+                  viewTab === 'custom' ? 'bg-white/20 text-white' : 'bg-slate-800 text-emerald-400 border border-emerald-500/30'
+                }`}>
+                  {selectedFundIds.length}
+                </span>
+              </button>
+            </div>
+
             {customFundIds && customFundIds.size > 0 && (
               <button
                 onClick={handleImportCustomFunds}
@@ -436,18 +615,46 @@ export const SipCalculator = ({
 
             <button
               onClick={handleExport}
-              disabled={results.length === 0}
+              disabled={results.length === 0 || results.filter(r => checkedExportIds.has(r.fundId)).length === 0}
               className="inline-flex items-center gap-2 px-4 py-2 text-xs font-semibold rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white shadow-lg border border-emerald-500/40 transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
+              title="Download checked mutual funds and NSE indices into Excel"
             >
               <FileSpreadsheet className="h-4 w-4" />
-              <span>Export to Excel</span>
+              <span>Export to Excel ({results.filter(r => checkedExportIds.has(r.fundId)).length} Selected)</span>
             </button>
           </div>
         </div>
       </div>
 
-      {/* Input Parameters Controls Bar */}
-      <div className="glass-card p-5 rounded-2xl border border-slate-800 shadow-xl space-y-4">
+      {/* VIEW 1: CUSTOM FUND LIST VIEW */}
+      {viewTab === 'custom' && (
+        <SipCustomFundList
+          results={results}
+          selectedFundIds={selectedFundIds}
+          fundMetaMap={fundMetaMap}
+          allFunds={allFunds}
+          checkedExportIds={checkedExportIds}
+          onToggleExportFund={handleToggleExportFund}
+          onToggleSelectAllFunds={handleToggleSelectAllFunds}
+          onRemoveFund={handleRemoveFund}
+          onClearAll={handleClearAllFunds}
+          onAddFund={handleAddFund}
+          onOpenDetail={(fundResult) => setActiveDetailFund(fundResult)}
+          onExport={handleExport}
+          monthlySip={monthlySip}
+          calculationDate={calculationDate}
+          sipDay={sipDay}
+          plan={plan}
+          onSwitchToCalculator={() => setViewTab('calculator')}
+          isCalculating={isCalculating}
+        />
+      )}
+
+      {/* VIEW 2: CALCULATOR & RESULTS VIEW */}
+      {viewTab === 'calculator' && (
+        <>
+          {/* Input Parameters Controls Bar */}
+          <div className="glass-card p-5 rounded-2xl border border-slate-800 shadow-xl space-y-4">
         
         {/* Top Controls: Search Fund & Quick Presets */}
         <div className="space-y-2">
@@ -547,35 +754,74 @@ export const SipCalculator = ({
           </div>
 
           {/* Quick Preset Buttons */}
-          <div className="flex items-center gap-2 flex-wrap pt-1">
-            <span className="text-[11px] text-slate-500 font-semibold">Popular Presets:</span>
-            {PRESET_POPULAR_FUNDS.map(preset => {
-              const isSelected = selectedFundIds.includes(preset.id);
-              return (
-                <button
-                  key={preset.id}
-                  onClick={() => handleAddFund(preset)}
-                  disabled={isSelected}
-                  className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-medium transition-all ${
-                    isSelected
-                      ? 'bg-slate-800/60 text-slate-500 border border-slate-800 cursor-default'
-                      : 'bg-slate-800/90 text-slate-300 hover:text-white hover:bg-slate-700 border border-slate-700/80'
-                  }`}
-                >
-                  <Plus className="h-3 w-3" />
-                  <span>{preset.displayName.replace(' - Growth', '')}</span>
-                </button>
-              );
-            })}
+          <div className="space-y-2 pt-1">
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-[11px] text-slate-500 font-semibold">Popular Presets:</span>
+              {PRESET_POPULAR_FUNDS.map(preset => {
+                const isSelected = selectedFundIds.includes(preset.id);
+                return (
+                  <button
+                    key={preset.id}
+                    onClick={() => handleAddFund(preset)}
+                    disabled={isSelected}
+                    className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-medium transition-all ${
+                      isSelected
+                        ? 'bg-slate-800/60 text-slate-500 border border-slate-800 cursor-default'
+                        : 'bg-slate-800/90 text-slate-300 hover:text-white hover:bg-slate-700 border border-slate-700/80'
+                    }`}
+                  >
+                    <Plus className="h-3 w-3" />
+                    <span>{preset.displayName.replace(' - Growth', '')}</span>
+                  </button>
+                );
+              })}
+            </div>
+
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-[11px] text-amber-500/80 font-semibold">NSE Benchmarks:</span>
+              {NSE_INDICES.map(idx => {
+                const isSelected = selectedFundIds.includes(idx.id);
+                return (
+                  <button
+                    key={idx.id}
+                    onClick={() => handleAddFund({
+                      id: idx.id,
+                      displayName: `${idx.displayName} (NSE Benchmark)`,
+                      category: idx.category,
+                      amcName: 'NSE Indices',
+                      isNseIndex: true
+                    })}
+                    disabled={isSelected}
+                    className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-medium transition-all ${
+                      isSelected
+                        ? 'bg-amber-500/10 text-amber-500/40 border border-amber-500/20 cursor-default'
+                        : 'bg-amber-500/15 text-amber-300 hover:text-white hover:bg-amber-500/30 border border-amber-500/30 shadow-sm'
+                    }`}
+                  >
+                    <Plus className="h-3 w-3" />
+                    <span>{idx.displayName}</span>
+                  </button>
+                );
+              })}
+            </div>
           </div>
         </div>
 
         {/* Selected Custom Funds Tags */}
         <div className="pt-2 border-t border-slate-800/80 space-y-2">
-          <div className="flex items-center justify-between text-xs">
-            <span className="font-semibold text-slate-400">
-              Custom Funds for SIP Analysis: <strong className="text-white">{selectedFundIds.length}</strong> Selected
+          <div className="flex items-center justify-between text-xs flex-wrap gap-2">
+            <span className="font-semibold text-slate-400 flex items-center gap-2">
+              <span>Custom Funds for SIP Analysis: <strong className="text-white">{selectedFundIds.length}</strong> Selected</span>
+              <span className="text-[10px] text-slate-500 hidden sm:inline">• Check/uncheck to select/deselect for export</span>
             </span>
+            <button
+              type="button"
+              onClick={() => setViewTab('custom')}
+              className="text-[11px] font-semibold text-emerald-400 hover:text-emerald-300 flex items-center gap-1 transition-colors"
+            >
+              <span>View in Custom Fund List Table</span>
+              <ArrowRight className="w-3.5 h-3.5" />
+            </button>
           </div>
 
           {selectedFundIds.length === 0 ? (
@@ -585,12 +831,26 @@ export const SipCalculator = ({
           ) : (
             <div className="flex items-center gap-2 flex-wrap">
               {selectedFundIds.map(id => {
-                const scheme = fundMetaMap[id] || allFunds.find(f => f.id === id) || PRESET_POPULAR_FUNDS.find(p => p.id === id) || { displayName: id };
+                const scheme = fundMetaMap[id] || (allFunds && allFunds.find(f => f.id === id)) || PRESET_POPULAR_FUNDS.find(p => p.id === id) || { displayName: id };
+                const isChecked = checkedExportIds.has(id);
                 return (
                   <div
                     key={id}
-                    className="inline-flex items-center gap-2 pl-3 pr-2 py-1.5 rounded-xl bg-slate-900 border border-slate-700 text-xs text-slate-200 shadow-sm"
+                    onClick={() => handleToggleExportFund(id)}
+                    className={`inline-flex items-center gap-2 pl-2.5 pr-2 py-1.5 rounded-xl border text-xs cursor-pointer select-none transition-all ${
+                      isChecked
+                        ? 'bg-slate-900 border-emerald-500/50 text-white shadow-sm ring-1 ring-emerald-500/20'
+                        : 'bg-slate-950/60 border-slate-800 text-slate-400 opacity-60'
+                    }`}
+                    title={isChecked ? 'Checked for Excel export (click to deselect)' : 'Unchecked for Excel export (click to select)'}
                   >
+                    <input
+                      type="checkbox"
+                      checked={isChecked}
+                      onChange={() => handleToggleExportFund(id)}
+                      onClick={(e) => e.stopPropagation()}
+                      className="w-3.5 h-3.5 rounded border-slate-700 bg-slate-800 text-emerald-500 focus:ring-emerald-400 cursor-pointer accent-emerald-500"
+                    />
                     <span className="font-semibold text-white">{scheme.displayName}</span>
                     {scheme.category && (
                       <span className="px-1.5 py-0.5 rounded text-[9px] bg-slate-800 text-brand-300 font-medium">
@@ -598,9 +858,13 @@ export const SipCalculator = ({
                       </span>
                     )}
                     <button
-                      onClick={() => handleRemoveFund(id)}
-                      className="p-1 rounded-md text-slate-400 hover:text-rose-400 hover:bg-rose-500/10 transition-colors"
-                      title="Remove fund"
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleRemoveFund(id);
+                      }}
+                      className="p-1 rounded-md text-slate-400 hover:text-rose-400 hover:bg-rose-500/10 transition-colors ml-0.5"
+                      title="Remove fund permanently"
                     >
                       <Trash2 className="h-3 w-3" />
                     </button>
@@ -635,57 +899,88 @@ export const SipCalculator = ({
             </div>
             {/* Quick SIP Chips */}
             <div className="flex items-center gap-1.5 pt-0.5">
-              {[5000, 10000, 25000].map(amt => (
+              {[25000, 50000, 100000, 200000].map(amt => (
                 <button
                   key={amt}
                   type="button"
                   onClick={() => setMonthlySip(amt)}
                   className={`px-2 py-0.5 rounded text-[10px] font-semibold transition-all ${
-                    monthlySip === amt ? 'bg-brand-600 text-white' : 'bg-slate-800 text-slate-400 hover:text-white'
+                    monthlySip === amt ? 'bg-brand-600 text-white shadow-sm' : 'bg-slate-800 text-slate-400 hover:text-white'
                   }`}
                 >
-                  ₹{(amt / 1000)}k
+                  {amt >= 100000 ? `₹${amt / 100000} Lakh` : `₹${amt / 1000}k`}
                 </button>
               ))}
             </div>
           </div>
 
-          {/* Calculation Date Picker */}
+          {/* Calculation Date Picker with visible Day of Week */}
           <div className="space-y-1.5">
-            <label className="text-xs font-bold text-slate-300 flex items-center gap-1">
-              <Calendar className="h-3.5 w-3.5 text-amber-400" /> Calculation Date
-            </label>
+            <div className="flex items-center justify-between">
+              <label className="text-xs font-bold text-slate-300 flex items-center gap-1">
+                <Calendar className="h-3.5 w-3.5 text-amber-400" /> Calculation Date
+              </label>
+              {calculationDate !== new Date().toISOString().split('T')[0] && (
+                <button
+                  type="button"
+                  onClick={() => setCalculationDate(new Date().toISOString().split('T')[0])}
+                  className="text-[10px] text-brand-400 hover:underline font-bold"
+                  title="Reset date to today"
+                >
+                  Reset to Today
+                </button>
+              )}
+            </div>
             <input
               type="date"
               value={calculationDate}
               onChange={(e) => setCalculationDate(e.target.value)}
               className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-xl text-xs font-medium text-white focus:outline-none focus:ring-2 focus:ring-brand-500 shadow-inner"
             />
-            <p className="text-[10px] text-slate-500">Valuation end date</p>
+            {/* Day of Week Indicator */}
+            <div className="flex items-center gap-1.5 text-[10px] pt-0.5">
+              <span className="px-1.5 py-0.5 rounded bg-slate-800 text-brand-300 font-bold border border-slate-700">
+                {getDayOfWeekInfo(calculationDate).dayName || 'Day'}
+              </span>
+              {getDayOfWeekInfo(calculationDate).isWeekend ? (
+                <span className="text-amber-400 font-medium">Weekend (shifts to trading day)</span>
+              ) : (
+                <span className="text-slate-500">Trading Day</span>
+              )}
+            </div>
           </div>
 
-          {/* Monthly SIP Installment Day */}
+          {/* Monthly SIP Installment Day (Supports any day 1 to 31) */}
           <div className="space-y-1.5">
-            <label className="text-xs font-bold text-slate-300 flex items-center gap-1">
-              <Calendar className="h-3.5 w-3.5 text-indigo-400" /> SIP Day of Month
-            </label>
-            <select
-              value={sipDay}
-              onChange={(e) => setSipDay(parseInt(e.target.value, 10))}
-              className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-xl text-xs font-semibold text-white focus:outline-none focus:ring-2 focus:ring-brand-500 shadow-inner"
-            >
-              <option value="1">1st of each month</option>
-              <option value="5">5th of each month</option>
-              <option value="10">10th of each month</option>
-              <option value="15">15th of each month</option>
-              <option value="20">20th of each month</option>
-              <option value="25">25th of each month (Default)</option>
-              <option value="28">28th of each month</option>
-            </select>
-            <p className="text-[10px] text-slate-500">Auto-shifts on non-trading days</p>
+            <div className="flex items-center justify-between">
+              <label className="text-xs font-bold text-slate-300 flex items-center gap-1">
+                <Calendar className="h-3.5 w-3.5 text-indigo-400" /> SIP Day of Month
+              </label>
+              <span className="text-[10px] font-bold text-brand-400">
+                Day {sipDay}
+              </span>
+            </div>
+            
+            <div>
+              <select
+                value={sipDay}
+                onChange={(e) => setSipDay(Math.min(31, Math.max(1, parseInt(e.target.value, 10))))}
+                className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-xl text-xs font-semibold text-white focus:outline-none focus:ring-2 focus:ring-brand-500 shadow-inner"
+              >
+                {Array.from({ length: 31 }, (_, i) => i + 1).map((d) => (
+                  <option key={d} value={d}>
+                    {getOrdinalSuffix(d)} of each month {d === 25 ? '(Default)' : ''}
+                  </option>
+                ))}
+              </select>
+            </div>
+            
+            <p className="text-[10px] text-slate-400">
+              NAV taken on every <strong className="text-brand-300 font-semibold">{getOrdinalSuffix(sipDay)}</strong> (shifts if holiday)
+            </p>
           </div>
 
-          {/* Plan Selector (Regular / Direct) */}
+          {/* Plan Selector (Regular / Direct / Both) */}
           <div className="space-y-1.5">
             <label className="text-xs font-bold text-slate-300 flex items-center gap-1">
               Plan Option
@@ -715,8 +1010,20 @@ export const SipCalculator = ({
               >
                 Direct
               </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setPlan('both');
+                  if (onSelectPlan) onSelectPlan('both');
+                }}
+                className={`flex-1 py-1 text-xs font-bold rounded-lg transition-all ${
+                  plan === 'both' ? 'bg-gradient-to-r from-indigo-600 to-emerald-600 text-white shadow-sm' : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                Both
+              </button>
             </div>
-            <p className="text-[10px] text-slate-500">Direct has lower expense ratio</p>
+            <p className="text-[10px] text-slate-500">{plan === 'both' ? 'Calculates both Regular & Direct' : 'Direct has lower expense ratio'}</p>
           </div>
 
           {/* Calculate Button */}
@@ -752,277 +1059,592 @@ export const SipCalculator = ({
         </div>
       )}
 
-      {/* Main Results Table Section */}
-      <div className="glass-card rounded-2xl border border-slate-800 shadow-xl overflow-hidden">
-        
-        {/* Table Top Bar */}
-        <div className="px-5 py-3.5 bg-slate-900/90 border-b border-slate-800 flex items-center justify-between flex-wrap gap-3">
-          <div className="flex items-center gap-2">
-            <span className="w-2.5 h-2.5 rounded-full bg-emerald-400"></span>
-            <h3 className="text-sm font-bold text-white uppercase tracking-wider">
-              SIP Performance Results
-            </h3>
-            <span className="px-2 py-0.5 rounded-full text-xs font-semibold bg-brand-500/20 text-brand-300 border border-brand-500/40">
-              {results.length} Schemes Analyzed
-            </span>
-          </div>
-
-          <div className="flex items-center gap-3 text-xs text-slate-400">
-            <span>Showing: <strong className="text-white font-mono">₹{Number(monthlySip).toLocaleString('en-IN')}/mo</strong></span>
-            <span>•</span>
-            <span>Click any scheme to inspect detailed monthly ledger</span>
-          </div>
+      {/* Results Section */}
+      {isCalculating ? (
+        <div className="glass-card rounded-2xl border border-slate-800 p-16 text-center text-slate-400 space-y-3">
+          <RefreshCw className="h-8 w-8 text-brand-400 animate-spin mx-auto" />
+          <p className="text-xs font-semibold text-slate-200">Retrieving historical NAV & index time series and computing XIRR cash flows...</p>
         </div>
+      ) : results.length === 0 ? (
+        <div className="glass-card rounded-2xl border border-slate-800 p-12 text-center text-slate-400 space-y-3">
+          <Sparkles className="h-10 w-10 text-slate-600 mx-auto" />
+          <h4 className="text-sm font-bold text-slate-300">Ready to Calculate SIP Returns</h4>
+          <p className="text-xs text-slate-400 max-w-md mx-auto">
+            Select one or more mutual funds and click <strong className="text-brand-400">Calculate Returns</strong> to compute 1Y, 2Y, 3Y, 5Y, and 10Y SIP annualized returns.
+          </p>
+        </div>
+      ) : (
+        <div className="space-y-8">
 
-        {/* Results Table */}
-        {isCalculating ? (
-          <div className="p-16 text-center text-slate-400 space-y-3">
-            <RefreshCw className="h-8 w-8 text-brand-400 animate-spin mx-auto" />
-            <p className="text-xs font-semibold text-slate-200">Retrieving historical NAV time series & computing XIRR cash flows...</p>
+          {/* TABLE 1: MUTUAL FUNDS SIP PERFORMANCE */}
+          <div className="glass-card rounded-2xl border border-slate-800 shadow-xl overflow-hidden">
+            {/* Table Top Bar */}
+            <div className="px-5 py-3.5 bg-slate-900/90 border-b border-slate-800 flex items-center justify-between flex-wrap gap-3">
+              <div className="flex items-center gap-3">
+                <span className="w-2.5 h-2.5 rounded-full bg-emerald-400"></span>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-sm font-bold text-white uppercase tracking-wider">
+                      Mutual Fund SIP Performance Results
+                    </h3>
+                    <span className="px-2 py-0.5 rounded-full text-xs font-semibold bg-brand-500/20 text-brand-300 border border-brand-500/40">
+                      {mutualFundResults.length} Schemes
+                    </span>
+                    <span className="text-xs text-slate-400">
+                      ({mutualFundResults.filter(r => checkedExportIds.has(r.fundId)).length} selected for export)
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-3 text-xs text-slate-400">
+                <span>Showing: <strong className="text-white font-mono">₹{Number(monthlySip).toLocaleString('en-IN')}/mo</strong></span>
+                <span>•</span>
+                <span>Click any scheme to inspect detailed monthly ledger</span>
+              </div>
+            </div>
+
+            {/* Table */}
+            {mutualFundResults.length === 0 ? (
+              <div className="p-8 text-center text-slate-500 text-xs">
+                No mutual funds selected. Search mutual funds above to compare against NSE benchmarks.
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs text-left">
+                  <thead className="bg-slate-950/70 text-slate-400 uppercase font-semibold text-[10px] tracking-wider border-b border-slate-800">
+                    <tr>
+                      {/* Select All Checkbox */}
+                      <th className="p-3 pl-4 w-12 text-center">
+                        <input
+                          type="checkbox"
+                          checked={mutualFundResults.length > 0 && mutualFundResults.every(f => checkedExportIds.has(f.fundId))}
+                          onChange={() => handleToggleSelectAllFunds(mutualFundResults)}
+                          title="Select/Deselect all Mutual Funds for Excel export"
+                          className="w-4 h-4 rounded border-slate-700 bg-slate-800 text-brand-600 focus:ring-brand-500 cursor-pointer accent-brand-500"
+                        />
+                      </th>
+
+                      <th 
+                        onClick={() => handleSort('displayName')}
+                        className="p-3 min-w-[240px] cursor-pointer hover:text-white transition-colors"
+                      >
+                        <div className="flex items-center gap-1.5">
+                          <span>Scheme Name</span>
+                          {renderSortIcon('displayName')}
+                        </div>
+                      </th>
+
+                      <th className="p-3 min-w-[100px]">Current NAV</th>
+
+                      <th 
+                        onClick={() => handleSort('return1Yr')}
+                        className="p-3 min-w-[100px] cursor-pointer hover:text-white transition-colors"
+                      >
+                        <div className="flex items-center gap-1.5">
+                          <span>1Y SIP</span>
+                          {renderSortIcon('return1Yr')}
+                        </div>
+                      </th>
+
+                      <th 
+                        onClick={() => handleSort('return2Yr')}
+                        className="p-3 min-w-[100px] cursor-pointer hover:text-white transition-colors"
+                      >
+                        <div className="flex items-center gap-1.5">
+                          <span>2Y SIP</span>
+                          {renderSortIcon('return2Yr')}
+                        </div>
+                      </th>
+
+                      <th 
+                        onClick={() => handleSort('return3Yr')}
+                        className="p-3 min-w-[100px] cursor-pointer hover:text-white transition-colors"
+                      >
+                        <div className="flex items-center gap-1.5">
+                          <span>3Y SIP</span>
+                          {renderSortIcon('return3Yr')}
+                        </div>
+                      </th>
+
+                      <th 
+                        onClick={() => handleSort('return5Yr')}
+                        className="p-3 min-w-[100px] cursor-pointer hover:text-white transition-colors"
+                      >
+                        <div className="flex items-center gap-1.5">
+                          <span>5Y SIP</span>
+                          {renderSortIcon('return5Yr')}
+                        </div>
+                      </th>
+
+                      <th 
+                        onClick={() => handleSort('return10Yr')}
+                        className="p-3 min-w-[100px] cursor-pointer hover:text-white transition-colors"
+                      >
+                        <div className="flex items-center gap-1.5">
+                          <span>10Y SIP</span>
+                          {renderSortIcon('return10Yr')}
+                        </div>
+                      </th>
+
+                      <th 
+                        onClick={() => handleSort('invested3Y')}
+                        className="p-3 min-w-[120px] cursor-pointer hover:text-white transition-colors"
+                      >
+                        <div className="flex items-center gap-1.5">
+                          <span>3Y Invested</span>
+                          {renderSortIcon('invested3Y')}
+                        </div>
+                      </th>
+
+                      <th 
+                        onClick={() => handleSort('units3Y')}
+                        className="p-3 min-w-[110px] cursor-pointer hover:text-white transition-colors"
+                      >
+                        <div className="flex items-center gap-1.5">
+                          <span>Total Units (3Y)</span>
+                          {renderSortIcon('units3Y')}
+                        </div>
+                      </th>
+
+                      <th 
+                        onClick={() => handleSort('value3Y')}
+                        className="p-3 min-w-[125px] cursor-pointer hover:text-white transition-colors"
+                      >
+                        <div className="flex items-center gap-1.5">
+                          <span>3Y Portfolio Value</span>
+                          {renderSortIcon('value3Y')}
+                        </div>
+                      </th>
+
+                      <th className="p-3 pr-4 text-right">Actions</th>
+                    </tr>
+                  </thead>
+
+                  <tbody className="divide-y divide-slate-800/60 font-sans">
+                    {mutualFundResults.map((fund) => {
+                      const isChecked = checkedExportIds.has(fund.fundId);
+                      const p3 = fund.periods?.['3Y'];
+                      const p1 = fund.periods?.['1Y'];
+                      const valDisplay = p3?.hasSufficientData
+                        ? `₹${Math.round(p3.finalPortfolioValue).toLocaleString('en-IN')}`
+                        : p1?.hasSufficientData
+                          ? `₹${Math.round(p1.finalPortfolioValue).toLocaleString('en-IN')} (1Y)`
+                          : 'N/A';
+
+                      const investedDisplay = p3?.hasSufficientData
+                        ? `₹${Number(p3.totalInvested).toLocaleString('en-IN')}`
+                        : p1?.hasSufficientData
+                          ? `₹${Number(p1.totalInvested).toLocaleString('en-IN')} (1Y)`
+                          : 'N/A';
+
+                      const unitsDisplay = p3?.hasSufficientData
+                        ? Number(p3.totalUnits).toFixed(3)
+                        : p1?.hasSufficientData
+                          ? Number(p1.totalUnits).toFixed(3)
+                          : 'N/A';
+
+                      return (
+                        <tr
+                          key={fund.fundId}
+                          onClick={() => setActiveDetailFund(fund)}
+                          className={`hover:bg-slate-800/40 transition-colors cursor-pointer group ${
+                            !isChecked ? 'opacity-60 bg-slate-950/40' : ''
+                          }`}
+                        >
+                          {/* Export Checkbox */}
+                          <td className="p-3 pl-4 text-center" onClick={(e) => e.stopPropagation()}>
+                            <input
+                              type="checkbox"
+                              checked={isChecked}
+                              onChange={() => handleToggleExportFund(fund.fundId)}
+                              title="Include in Excel export"
+                              className="w-4 h-4 rounded border-slate-700 bg-slate-800 text-brand-600 focus:ring-brand-500 cursor-pointer accent-brand-500"
+                            />
+                          </td>
+
+                          {/* Name */}
+                          <td className="p-3">
+                            <div className="font-bold text-white group-hover:text-brand-300 transition-colors">
+                              {fund.displayName}
+                            </div>
+                            <div className="text-[10px] text-slate-400 mt-0.5 flex items-center gap-2">
+                              <span className="text-brand-400 font-semibold">{fund.category}</span>
+                              <span>•</span>
+                              <span>{fund.amcName}</span>
+                              {fund.plan && (
+                                <>
+                                  <span>•</span>
+                                  <span className="text-indigo-400 font-medium">{fund.plan}</span>
+                                </>
+                              )}
+                            </div>
+                          </td>
+
+                          {/* Current NAV */}
+                          <td className="p-3 font-mono text-[11px] text-slate-200">
+                            ₹{fund.currentNav ? Number(fund.currentNav).toFixed(2) : 'N/A'}
+                          </td>
+
+                          {/* 1Y Return */}
+                          <td className="p-3 text-[11px]">
+                            {formatPctCell(fund.returns?.return1Yr, fund.periods?.['1Y'])}
+                          </td>
+
+                          {/* 2Y Return */}
+                          <td className="p-3 text-[11px]">
+                            {formatPctCell(fund.returns?.return2Yr, fund.periods?.['2Y'])}
+                          </td>
+
+                          {/* 3Y Return */}
+                          <td className="p-3 text-[11px]">
+                            {formatPctCell(fund.returns?.return3Yr, fund.periods?.['3Y'])}
+                          </td>
+
+                          {/* 5Y Return */}
+                          <td className="p-3 text-[11px]">
+                            {formatPctCell(fund.returns?.return5Yr, fund.periods?.['5Y'])}
+                          </td>
+
+                          {/* 10Y Return */}
+                          <td className="p-3 text-[11px]">
+                            {formatPctCell(fund.returns?.return10Yr, fund.periods?.['10Y'])}
+                          </td>
+
+                          {/* 3Y Total Invested */}
+                          <td className="p-3 font-mono text-[11px] text-slate-300">
+                            {investedDisplay}
+                          </td>
+
+                          {/* 3Y Total Units */}
+                          <td className="p-3 font-mono text-[11px] text-indigo-300 font-semibold">
+                            {unitsDisplay}
+                          </td>
+
+                          {/* 3Y Final Value */}
+                          <td className="p-3 font-mono text-[11px] font-bold text-emerald-400">
+                            {valDisplay}
+                          </td>
+
+                          {/* Actions */}
+                          <td className="p-3 pr-4 text-right">
+                            <div className="flex items-center justify-end gap-2">
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setActiveDetailFund(fund);
+                                }}
+                                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-brand-500/10 hover:bg-brand-500 text-brand-300 hover:text-white transition-all text-[11px] font-semibold"
+                                title="View detailed monthly cash flows and ledger"
+                              >
+                                <Eye className="h-3 w-3" />
+                                <span>Details</span>
+                              </button>
+
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleRemoveFund(fund.fundId);
+                                }}
+                                className="p-1 rounded-lg text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 transition-all"
+                                title="Remove fund from calculation"
+                              >
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
-        ) : results.length === 0 ? (
-          <div className="p-12 text-center text-slate-400 space-y-3">
-            <Sparkles className="h-10 w-10 text-slate-600 mx-auto" />
-            <h4 className="text-sm font-bold text-slate-300">Ready to Calculate SIP Returns</h4>
-            <p className="text-xs text-slate-400 max-w-md mx-auto">
-              Select one or more mutual funds and click <strong className="text-brand-400">Calculate Returns</strong> to compute 1Y, 2Y, 3Y, 5Y, and 10Y SIP annualized returns.
-            </p>
-          </div>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-xs text-left">
-              <thead className="bg-slate-950/70 text-slate-400 uppercase font-semibold text-[10px] tracking-wider border-b border-slate-800">
-                <tr>
-                  <th 
-                    onClick={() => handleSort('displayName')}
-                    className="p-3 pl-4 min-w-[260px] cursor-pointer hover:text-white transition-colors"
-                  >
-                    <div className="flex items-center gap-1.5">
-                      <span>Scheme Name</span>
-                      {renderSortIcon('displayName')}
-                    </div>
-                  </th>
 
-                  <th className="p-3 min-w-[100px]">Current NAV</th>
+          {/* TABLE 2: SEPARATE NSE BENCHMARK INDICES SIP SECTION */}
+          <div className="glass-card rounded-2xl border border-slate-800 shadow-xl overflow-hidden">
+            {/* Table Top Bar */}
+            <div className="px-5 py-3.5 bg-slate-900/90 border-b border-slate-800 flex items-center justify-between flex-wrap gap-3">
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-brand-600 to-emerald-500 flex items-center justify-center text-white shadow-md">
+                  <TrendingUp className="w-4 h-4" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <h3 className="text-sm font-bold text-white uppercase tracking-wider">
+                      NSE Benchmark Indices — SIP Return Performance
+                    </h3>
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
+                      Official Benchmark
+                    </span>
+                    <span className="text-xs text-slate-400">
+                      ({nseIndexResults.filter(r => checkedExportIds.has(r.fundId)).length} of {nseIndexResults.length} selected for export)
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-slate-400 mt-0.5">
+                    Monthly SIP units acquired using index closing value as NAV on the {getOrdinalSuffix(sipDay)} of each month
+                  </p>
+                </div>
+              </div>
 
-                  <th 
-                    onClick={() => handleSort('return1Yr')}
-                    className="p-3 min-w-[110px] cursor-pointer hover:text-white transition-colors"
-                  >
-                    <div className="flex items-center gap-1.5">
-                      <span>1Y SIP Return</span>
-                      {renderSortIcon('return1Yr')}
-                    </div>
-                  </th>
+              <div className="text-xs text-slate-400 font-medium">
+                Standard formula: units = ₹{Number(monthlySip).toLocaleString('en-IN')} / Index Value
+              </div>
+            </div>
 
-                  <th 
-                    onClick={() => handleSort('return2Yr')}
-                    className="p-3 min-w-[110px] cursor-pointer hover:text-white transition-colors"
-                  >
-                    <div className="flex items-center gap-1.5">
-                      <span>2Y SIP Return</span>
-                      {renderSortIcon('return2Yr')}
-                    </div>
-                  </th>
+            {/* NSE Table */}
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs text-left">
+                <thead className="bg-slate-950/70 text-slate-400 uppercase font-semibold text-[10px] tracking-wider border-b border-slate-800">
+                  <tr>
+                    {/* Select All Checkbox */}
+                    <th className="p-3 pl-4 w-12 text-center">
+                      <input
+                        type="checkbox"
+                        checked={nseIndexResults.length > 0 && nseIndexResults.every(f => checkedExportIds.has(f.fundId))}
+                        onChange={() => handleToggleSelectAllFunds(nseIndexResults)}
+                        title="Select/Deselect all NSE indices for Excel export"
+                        className="w-4 h-4 rounded border-slate-700 bg-slate-800 text-brand-600 focus:ring-brand-500 cursor-pointer accent-brand-500"
+                      />
+                    </th>
 
-                  <th 
-                    onClick={() => handleSort('return3Yr')}
-                    className="p-3 min-w-[110px] cursor-pointer hover:text-white transition-colors"
-                  >
-                    <div className="flex items-center gap-1.5">
-                      <span>3Y SIP Return</span>
-                      {renderSortIcon('return3Yr')}
-                    </div>
-                  </th>
-
-                  <th 
-                    onClick={() => handleSort('return5Yr')}
-                    className="p-3 min-w-[110px] cursor-pointer hover:text-white transition-colors"
-                  >
-                    <div className="flex items-center gap-1.5">
-                      <span>5Y SIP Return</span>
-                      {renderSortIcon('return5Yr')}
-                    </div>
-                  </th>
-
-                  <th 
-                    onClick={() => handleSort('return10Yr')}
-                    className="p-3 min-w-[110px] cursor-pointer hover:text-white transition-colors"
-                  >
-                    <div className="flex items-center gap-1.5">
-                      <span>10Y SIP Return</span>
-                      {renderSortIcon('return10Yr')}
-                    </div>
-                  </th>
-
-                  <th 
-                    onClick={() => handleSort('invested3Y')}
-                    className="p-3 min-w-[125px] cursor-pointer hover:text-white transition-colors"
-                  >
-                    <div className="flex items-center gap-1.5">
-                      <span>3Y Total Invested</span>
-                      {renderSortIcon('invested3Y')}
-                    </div>
-                  </th>
-
-                  <th 
-                    onClick={() => handleSort('units3Y')}
-                    className="p-3 min-w-[110px] cursor-pointer hover:text-white transition-colors"
-                  >
-                    <div className="flex items-center gap-1.5">
-                      <span>Total Units (3Y)</span>
-                      {renderSortIcon('units3Y')}
-                    </div>
-                  </th>
-
-                  <th 
-                    onClick={() => handleSort('value3Y')}
-                    className="p-3 min-w-[125px] cursor-pointer hover:text-white transition-colors"
-                  >
-                    <div className="flex items-center gap-1.5">
-                      <span>3Y Portfolio Value</span>
-                      {renderSortIcon('value3Y')}
-                    </div>
-                  </th>
-
-                  <th className="p-3 pr-4 text-right">Actions</th>
-                </tr>
-              </thead>
-
-              <tbody className="divide-y divide-slate-800/60 font-sans">
-                {sortedResults.map((fund) => {
-                  const p3 = fund.periods?.['3Y'];
-                  const p1 = fund.periods?.['1Y'];
-                  const valDisplay = p3?.hasSufficientData
-                    ? `₹${Math.round(p3.finalPortfolioValue).toLocaleString('en-IN')}`
-                    : p1?.hasSufficientData
-                      ? `₹${Math.round(p1.finalPortfolioValue).toLocaleString('en-IN')} (1Y)`
-                      : 'N/A';
-
-                  const investedDisplay = p3?.hasSufficientData
-                    ? `₹${Number(p3.totalInvested).toLocaleString('en-IN')}`
-                    : p1?.hasSufficientData
-                      ? `₹${Number(p1.totalInvested).toLocaleString('en-IN')} (1Y)`
-                      : 'N/A';
-
-                  const unitsDisplay = p3?.hasSufficientData
-                    ? Number(p3.totalUnits).toFixed(3)
-                    : p1?.hasSufficientData
-                      ? Number(p1.totalUnits).toFixed(3)
-                      : 'N/A';
-
-                  return (
-                    <tr
-                      key={fund.fundId}
-                      onClick={() => setActiveDetailFund(fund)}
-                      className="hover:bg-slate-800/40 transition-colors cursor-pointer group"
+                    <th 
+                      onClick={() => handleSort('displayName')}
+                      className="p-3 min-w-[240px] cursor-pointer hover:text-white transition-colors"
                     >
-                      {/* Name */}
-                      <td className="p-3 pl-4">
-                        <div className="font-bold text-white group-hover:text-brand-300 transition-colors">
-                          {fund.displayName}
-                        </div>
-                        <div className="text-[10px] text-slate-400 mt-0.5 flex items-center gap-2">
-                          <span className="text-brand-400 font-semibold">{fund.category}</span>
-                          <span>•</span>
-                          <span>{fund.amcName}</span>
-                        </div>
-                      </td>
+                      <div className="flex items-center gap-1.5">
+                        <span>Benchmark Index</span>
+                        {renderSortIcon('displayName')}
+                      </div>
+                    </th>
 
-                       {/* Current NAV */}
-                      <td className="p-3 font-mono text-[11px] text-slate-200">
-                        ₹{fund.currentNav ? Number(fund.currentNav).toFixed(2) : 'N/A'}
-                      </td>
+                    <th className="p-3 min-w-[120px]">Index Value (NAV)</th>
 
-                      {/* 1Y Return */}
-                      <td className="p-3 text-[11px]">
-                        {formatPctCell(fund.returns?.return1Yr, fund.periods?.['1Y'])}
-                      </td>
+                    <th 
+                      onClick={() => handleSort('return1Yr')}
+                      className="p-3 min-w-[100px] cursor-pointer hover:text-white transition-colors"
+                    >
+                      <div className="flex items-center gap-1.5">
+                        <span>1Y SIP</span>
+                        {renderSortIcon('return1Yr')}
+                      </div>
+                    </th>
 
-                      {/* 2Y Return */}
-                      <td className="p-3 text-[11px]">
-                        {formatPctCell(fund.returns?.return2Yr, fund.periods?.['2Y'])}
-                      </td>
+                    <th 
+                      onClick={() => handleSort('return2Yr')}
+                      className="p-3 min-w-[100px] cursor-pointer hover:text-white transition-colors"
+                    >
+                      <div className="flex items-center gap-1.5">
+                        <span>2Y SIP</span>
+                        {renderSortIcon('return2Yr')}
+                      </div>
+                    </th>
 
-                      {/* 3Y Return */}
-                      <td className="p-3 text-[11px]">
-                        {formatPctCell(fund.returns?.return3Yr, fund.periods?.['3Y'])}
-                      </td>
+                    <th 
+                      onClick={() => handleSort('return3Yr')}
+                      className="p-3 min-w-[100px] cursor-pointer hover:text-white transition-colors"
+                    >
+                      <div className="flex items-center gap-1.5">
+                        <span>3Y SIP</span>
+                        {renderSortIcon('return3Yr')}
+                      </div>
+                    </th>
 
-                      {/* 5Y Return */}
-                      <td className="p-3 text-[11px]">
-                        {formatPctCell(fund.returns?.return5Yr, fund.periods?.['5Y'])}
-                      </td>
+                    <th 
+                      onClick={() => handleSort('return5Yr')}
+                      className="p-3 min-w-[100px] cursor-pointer hover:text-white transition-colors"
+                    >
+                      <div className="flex items-center gap-1.5">
+                        <span>5Y SIP</span>
+                        {renderSortIcon('return5Yr')}
+                      </div>
+                    </th>
 
-                      {/* 10Y Return */}
-                      <td className="p-3 text-[11px]">
-                        {formatPctCell(fund.returns?.return10Yr, fund.periods?.['10Y'])}
-                      </td>
+                    <th 
+                      onClick={() => handleSort('return10Yr')}
+                      className="p-3 min-w-[100px] cursor-pointer hover:text-white transition-colors"
+                    >
+                      <div className="flex items-center gap-1.5">
+                        <span>10Y SIP</span>
+                        {renderSortIcon('return10Yr')}
+                      </div>
+                    </th>
 
-                      {/* 3Y Total Invested */}
-                      <td className="p-3 font-mono text-[11px] text-slate-300">
-                        {investedDisplay}
-                      </td>
+                    <th 
+                      onClick={() => handleSort('invested3Y')}
+                      className="p-3 min-w-[120px] cursor-pointer hover:text-white transition-colors"
+                    >
+                      <div className="flex items-center gap-1.5">
+                        <span>3Y Invested</span>
+                        {renderSortIcon('invested3Y')}
+                      </div>
+                    </th>
 
-                      {/* 3Y Total Units */}
-                      <td className="p-3 font-mono text-[11px] text-indigo-300 font-semibold">
-                        {unitsDisplay}
-                      </td>
+                    <th 
+                      onClick={() => handleSort('units3Y')}
+                      className="p-3 min-w-[110px] cursor-pointer hover:text-white transition-colors"
+                    >
+                      <div className="flex items-center gap-1.5">
+                        <span>Total Units (3Y)</span>
+                        {renderSortIcon('units3Y')}
+                      </div>
+                    </th>
 
-                      {/* 3Y Final Value */}
-                      <td className="p-3 font-mono text-[11px] font-bold text-emerald-400">
-                        {valDisplay}
-                      </td>
+                    <th 
+                      onClick={() => handleSort('value3Y')}
+                      className="p-3 min-w-[125px] cursor-pointer hover:text-white transition-colors"
+                    >
+                      <div className="flex items-center gap-1.5">
+                        <span>3Y Portfolio Value</span>
+                        {renderSortIcon('value3Y')}
+                      </div>
+                    </th>
 
-                      {/* Actions */}
-                      <td className="p-3 pr-4 text-right">
-                        <div className="flex items-center justify-end gap-2">
+                    <th className="p-3 pr-4 text-right">Actions</th>
+                  </tr>
+                </thead>
+
+                <tbody className="divide-y divide-slate-800/60 font-sans">
+                  {nseIndexResults.map((fund) => {
+                    const isChecked = checkedExportIds.has(fund.fundId);
+                    const p3 = fund.periods?.['3Y'];
+                    const p1 = fund.periods?.['1Y'];
+                    const valDisplay = p3?.hasSufficientData
+                      ? `₹${Math.round(p3.finalPortfolioValue).toLocaleString('en-IN')}`
+                      : p1?.hasSufficientData
+                        ? `₹${Math.round(p1.finalPortfolioValue).toLocaleString('en-IN')} (1Y)`
+                        : 'N/A';
+
+                    const investedDisplay = p3?.hasSufficientData
+                      ? `₹${Number(p3.totalInvested).toLocaleString('en-IN')}`
+                      : p1?.hasSufficientData
+                        ? `₹${Number(p1.totalInvested).toLocaleString('en-IN')} (1Y)`
+                        : 'N/A';
+
+                    const unitsDisplay = p3?.hasSufficientData
+                      ? Number(p3.totalUnits).toFixed(3)
+                      : p1?.hasSufficientData
+                        ? Number(p1.totalUnits).toFixed(3)
+                        : 'N/A';
+
+                    return (
+                      <tr
+                        key={fund.fundId}
+                        onClick={() => setActiveDetailFund(fund)}
+                        className={`hover:bg-slate-800/40 transition-colors cursor-pointer group ${
+                          !isChecked ? 'opacity-60 bg-slate-950/40' : ''
+                        }`}
+                      >
+                        {/* Export Checkbox */}
+                        <td className="p-3 pl-4 text-center" onClick={(e) => e.stopPropagation()}>
+                          <input
+                            type="checkbox"
+                            checked={isChecked}
+                            onChange={() => handleToggleExportFund(fund.fundId)}
+                            title="Include in Excel export"
+                            className="w-4 h-4 rounded border-slate-700 bg-slate-800 text-brand-600 focus:ring-brand-500 cursor-pointer accent-brand-500"
+                          />
+                        </td>
+
+                        {/* Name */}
+                        <td className="p-3">
+                          <div className="font-bold text-white group-hover:text-brand-300 transition-colors flex items-center gap-2 flex-wrap">
+                            <span>{fund.displayName}</span>
+                            <span className="px-1.5 py-0.5 rounded text-[9px] font-bold uppercase bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                              NSE Benchmark
+                            </span>
+                          </div>
+                          <div className="text-[10px] text-slate-400 mt-0.5 flex items-center gap-2">
+                            <span className="text-brand-300 font-semibold">{fund.category}</span>
+                            <span>•</span>
+                            <span>NSE Indices Limited</span>
+                          </div>
+                        </td>
+
+                        {/* Current NAV / Index Value */}
+                        <td className="p-3 font-mono text-[11px] text-white font-bold">
+                          ₹{fund.currentNav ? Number(fund.currentNav).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : 'N/A'}
+                        </td>
+
+                        {/* 1Y Return */}
+                        <td className="p-3 text-[11px]">
+                          {formatPctCell(fund.returns?.return1Yr, fund.periods?.['1Y'])}
+                        </td>
+
+                        {/* 2Y Return */}
+                        <td className="p-3 text-[11px]">
+                          {formatPctCell(fund.returns?.return2Yr, fund.periods?.['2Y'])}
+                        </td>
+
+                        {/* 3Y Return */}
+                        <td className="p-3 text-[11px]">
+                          {formatPctCell(fund.returns?.return3Yr, fund.periods?.['3Y'])}
+                        </td>
+
+                        {/* 5Y Return */}
+                        <td className="p-3 text-[11px]">
+                          {formatPctCell(fund.returns?.return5Yr, fund.periods?.['5Y'])}
+                        </td>
+
+                        {/* 10Y Return */}
+                        <td className="p-3 text-[11px]">
+                          {formatPctCell(fund.returns?.return10Yr, fund.periods?.['10Y'])}
+                        </td>
+
+                        {/* 3Y Total Invested */}
+                        <td className="p-3 font-mono text-[11px] text-slate-300">
+                          {investedDisplay}
+                        </td>
+
+                        {/* 3Y Total Units */}
+                        <td className="p-3 font-mono text-[11px] text-indigo-300 font-semibold">
+                          {unitsDisplay}
+                        </td>
+
+                        {/* 3Y Final Value */}
+                        <td className="p-3 font-mono text-[11px] font-bold text-emerald-400">
+                          {valDisplay}
+                        </td>
+
+                        {/* Actions */}
+                        <td className="p-3 pr-4 text-right">
                           <button
                             onClick={(e) => {
                               e.stopPropagation();
                               setActiveDetailFund(fund);
                             }}
-                            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-brand-500/10 hover:bg-brand-500 text-brand-300 hover:text-white transition-all text-[11px] font-semibold"
-                            title="View detailed monthly cash flows and units"
+                            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-brand-600 text-slate-300 hover:text-white border border-slate-700 transition-all text-[11px] font-semibold"
+                            title="View detailed monthly cash flows and ledger"
                           >
                             <Eye className="h-3 w-3" />
-                            <span>Details</span>
+                            <span>Ledger</span>
                           </button>
-
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleRemoveFund(fund.fundId);
-                            }}
-                            className="p-1 rounded-lg text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 transition-all"
-                            title="Remove from analysis"
-                          >
-                            <Trash2 className="h-3.5 w-3.5" />
-                          </button>
-                        </div>
-                      </td>
-
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
           </div>
-        )}
 
-        {/* Footer Info Note */}
-        <div className="p-3 bg-slate-950/80 border-t border-slate-800 text-[11px] text-slate-400 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <Info className="h-3.5 w-3.5 text-brand-400 shrink-0" />
-            <span>
-              SIP returns are calculated via XIRR from monthly debit installments (-SIP) and portfolio valuation (+Value) on the selected date.
-            </span>
-          </div>
-          <span className="text-[10px] text-slate-500 hidden sm:inline">
-            High precision floating point unit calculation
+        </div>
+      )}
+      </>
+      )}
+
+      {/* Footer Info Note */}
+      <div className="p-3 bg-slate-950/80 rounded-xl border border-slate-800 text-[11px] text-slate-400 flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <Info className="h-3.5 w-3.5 text-brand-400 shrink-0" />
+          <span>
+            SIP returns are calculated via XIRR from monthly debit installments (-SIP) and portfolio valuation (+Value) on the selected date. Checked funds are included in Excel exports.
           </span>
         </div>
-
+        <span className="text-[10px] text-slate-500 hidden sm:inline">
+          High precision floating point unit calculation
+        </span>
       </div>
 
       {/* Fund Detailed Ledger Modal */}

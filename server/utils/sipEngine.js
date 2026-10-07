@@ -244,7 +244,7 @@ function generateMonthlySipDates(calculationDate, years, preferredSipDay = null)
   const calcMonth = calculationDate.getMonth();
   const calcDay = calculationDate.getDate();
 
-  const sipDay = preferredSipDay ? Math.min(28, Math.max(1, preferredSipDay)) : Math.min(28, calcDay);
+  const sipDay = preferredSipDay ? Math.min(31, Math.max(1, preferredSipDay)) : Math.min(31, calcDay);
 
   for (let i = totalMonths; i >= 1; i--) {
     let monthOffset = calcMonth - i;
@@ -432,7 +432,7 @@ function calculateSipForPeriod(rawNavList, monthlySipAmount, calculationDate, ye
 function calculateFullFundSip({
   fund,
   rawNavList,
-  monthlySipAmount = 10000,
+  monthlySipAmount = 100000,
   calculationDate = null,
   preferredSipDay = 25,
   plan = 'regular'

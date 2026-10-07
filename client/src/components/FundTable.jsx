@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { Search, ArrowUpDown, ArrowUp, ArrowDown, ExternalLink, AlertCircle, XCircle, ChevronLeft, ChevronRight, Check } from 'lucide-react';
+import { Search, ArrowUpDown, ArrowUp, ArrowDown, ExternalLink, AlertCircle, XCircle, ChevronLeft, ChevronRight, Check, Calendar } from 'lucide-react';
 
 const FundTable = ({
   funds = [],
@@ -13,6 +13,8 @@ const FundTable = ({
   customDaysList = [33, 50, 67],
   startDate = '',
   endDate = '',
+  calculationDate = '',
+  meta = null,
   selectedPlan = 'regular',
   selectedFundIds = new Set(),
   onToggleSelectFund,
@@ -133,9 +135,27 @@ const FundTable = ({
             </div>
           )}
           <div className="text-xs text-slate-400 font-medium">
-            Total Schemes: <span className="text-white font-bold">{totalFunds.toLocaleString('en-IN')}</span> | Showing <span className="text-brand-400 font-bold">{selectedPlan.toUpperCase()}</span> Plan
+            Total Schemes: <span className="text-white font-bold">{totalFunds.toLocaleString('en-IN')}</span> | Showing <span className="text-brand-400 font-bold">{selectedPlan === 'both' ? 'BOTH (Regular & Direct)' : selectedPlan.toUpperCase()}</span> Plan
           </div>
         </div>
+      </div>
+
+      {/* Prominent Valuation & Calculation Date Banner */}
+      <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-2.5 rounded-xl bg-slate-900/90 border border-slate-800 text-xs shadow-md">
+        <div className="flex items-center gap-2 text-brand-300 font-medium">
+          <Calendar className="w-4 h-4 text-brand-400 shrink-0" />
+          <span>
+            Valuation & Performance as of: <strong className="text-white font-bold">{calculationDate || 'Today'}</strong>
+            {meta?.reportDate && (
+              <span className="text-slate-400 ml-2">
+                (Latest AMFI Data Date: <strong className="text-emerald-400 font-semibold">{meta.reportDate}</strong>)
+              </span>
+            )}
+          </span>
+        </div>
+        <span className="text-slate-400 text-[11px] hidden sm:inline">
+          All fund NAV values and returns in this table are calculated as of this date
+        </span>
       </div>
 
       {/* Main Fund Table */}
@@ -175,73 +195,153 @@ const FundTable = ({
                   </div>
                 </th>
 
-                <th 
-                  onClick={() => handleSort('currentNav')} 
-                  className="p-3.5 cursor-pointer hover:text-white transition-colors group select-none min-w-[100px]"
-                >
-                  <div className="flex items-center gap-1.5">
-                    <span>Current NAV</span>
-                    {renderSortIcon('currentNav')}
-                  </div>
-                </th>
-
-                {/* Conditional Dynamic Headers: Yearly vs Day Calculation */}
-                {mode === 'yearly' ? (
+                {/* NAV Column(s) */}
+                {selectedPlan === 'both' ? (
                   <>
                     <th 
-                      onClick={() => handleSort('return1Yr')} 
-                      className="p-3.5 cursor-pointer hover:text-white transition-colors group select-none min-w-[90px]"
+                      onClick={() => handleSort('regNav')} 
+                      className="p-3.5 cursor-pointer hover:text-white transition-colors group select-none min-w-[95px]"
                     >
                       <div className="flex items-center gap-1.5">
-                        <span>1 Yr (%)</span>
-                        {renderSortIcon('return1Yr')}
+                        <span>NAV (Reg)</span>
+                        {renderSortIcon('regNav')}
                       </div>
                     </th>
-
                     <th 
-                      onClick={() => handleSort('return2Yr')} 
-                      className="p-3.5 cursor-pointer hover:text-white transition-colors group select-none min-w-[90px]"
+                      onClick={() => handleSort('dirNav')} 
+                      className="p-3.5 cursor-pointer hover:text-white transition-colors group select-none min-w-[95px]"
                     >
                       <div className="flex items-center gap-1.5">
-                        <span>2 Yr (%)</span>
-                        {renderSortIcon('return2Yr')}
-                      </div>
-                    </th>
-
-                    <th 
-                      onClick={() => handleSort('return3Yr')} 
-                      className="p-3.5 cursor-pointer hover:text-white transition-colors group select-none min-w-[90px]"
-                    >
-                      <div className="flex items-center gap-1.5">
-                        <span>3 Yr (%)</span>
-                        {renderSortIcon('return3Yr')}
-                      </div>
-                    </th>
-
-                    <th 
-                      onClick={() => handleSort('return5Yr')} 
-                      className="p-3.5 cursor-pointer hover:text-white transition-colors group select-none min-w-[90px]"
-                    >
-                      <div className="flex items-center gap-1.5">
-                        <span>5 Yr (%)</span>
-                        {renderSortIcon('return5Yr')}
-                      </div>
-                    </th>
-
-                    <th 
-                      onClick={() => handleSort('return10Yr')} 
-                      className="p-3.5 cursor-pointer hover:text-white transition-colors group select-none min-w-[90px]"
-                    >
-                      <div className="flex items-center gap-1.5">
-                        <span>10 Yr (%)</span>
-                        {renderSortIcon('return10Yr')}
+                        <span>NAV (Dir)</span>
+                        {renderSortIcon('dirNav')}
                       </div>
                     </th>
                   </>
                 ) : (
+                  <th 
+                    onClick={() => handleSort('currentNav')} 
+                    className="p-3.5 cursor-pointer hover:text-white transition-colors group select-none min-w-[100px]"
+                  >
+                    <div className="flex items-center gap-1.5">
+                      <span>Current NAV</span>
+                      {renderSortIcon('currentNav')}
+                    </div>
+                  </th>
+                )}
+
+                {/* Conditional Dynamic Headers: Yearly vs Day Calculation */}
+                {mode === 'yearly' ? (
+                  selectedPlan === 'both' ? (
+                    <>
+                      <th onClick={() => handleSort('regReturn1Yr')} className="p-3.5 cursor-pointer hover:text-white transition-colors group select-none min-w-[85px] text-center">
+                        <div className="flex items-center justify-center gap-1"><span>1Y Reg</span>{renderSortIcon('regReturn1Yr')}</div>
+                      </th>
+                      <th onClick={() => handleSort('dirReturn1Yr')} className="p-3.5 cursor-pointer hover:text-white transition-colors group select-none min-w-[85px] text-center">
+                        <div className="flex items-center justify-center gap-1"><span>1Y Dir</span>{renderSortIcon('dirReturn1Yr')}</div>
+                      </th>
+                      <th onClick={() => handleSort('regReturn2Yr')} className="p-3.5 cursor-pointer hover:text-white transition-colors group select-none min-w-[85px] text-center">
+                        <div className="flex items-center justify-center gap-1"><span>2Y Reg</span>{renderSortIcon('regReturn2Yr')}</div>
+                      </th>
+                      <th onClick={() => handleSort('dirReturn2Yr')} className="p-3.5 cursor-pointer hover:text-white transition-colors group select-none min-w-[85px] text-center">
+                        <div className="flex items-center justify-center gap-1"><span>2Y Dir</span>{renderSortIcon('dirReturn2Yr')}</div>
+                      </th>
+                      <th onClick={() => handleSort('regReturn3Yr')} className="p-3.5 cursor-pointer hover:text-white transition-colors group select-none min-w-[85px] text-center">
+                        <div className="flex items-center justify-center gap-1"><span>3Y Reg</span>{renderSortIcon('regReturn3Yr')}</div>
+                      </th>
+                      <th onClick={() => handleSort('dirReturn3Yr')} className="p-3.5 cursor-pointer hover:text-white transition-colors group select-none min-w-[85px] text-center">
+                        <div className="flex items-center justify-center gap-1"><span>3Y Dir</span>{renderSortIcon('dirReturn3Yr')}</div>
+                      </th>
+                      <th onClick={() => handleSort('regReturn5Yr')} className="p-3.5 cursor-pointer hover:text-white transition-colors group select-none min-w-[85px] text-center">
+                        <div className="flex items-center justify-center gap-1"><span>5Y Reg</span>{renderSortIcon('regReturn5Yr')}</div>
+                      </th>
+                      <th onClick={() => handleSort('dirReturn5Yr')} className="p-3.5 cursor-pointer hover:text-white transition-colors group select-none min-w-[85px] text-center">
+                        <div className="flex items-center justify-center gap-1"><span>5Y Dir</span>{renderSortIcon('dirReturn5Yr')}</div>
+                      </th>
+                      <th onClick={() => handleSort('regReturn10Yr')} className="p-3.5 cursor-pointer hover:text-white transition-colors group select-none min-w-[85px] text-center">
+                        <div className="flex items-center justify-center gap-1"><span>10Y Reg</span>{renderSortIcon('regReturn10Yr')}</div>
+                      </th>
+                      <th onClick={() => handleSort('dirReturn10Yr')} className="p-3.5 cursor-pointer hover:text-white transition-colors group select-none min-w-[85px] text-center">
+                        <div className="flex items-center justify-center gap-1"><span>10Y Dir</span>{renderSortIcon('dirReturn10Yr')}</div>
+                      </th>
+                    </>
+                  ) : (
+                    <>
+                      <th 
+                        onClick={() => handleSort('return1Yr')} 
+                        className="p-3.5 cursor-pointer hover:text-white transition-colors group select-none min-w-[90px]"
+                      >
+                        <div className="flex items-center gap-1.5">
+                          <span>1 Yr (%)</span>
+                          {renderSortIcon('return1Yr')}
+                        </div>
+                      </th>
+
+                      <th 
+                        onClick={() => handleSort('return2Yr')} 
+                        className="p-3.5 cursor-pointer hover:text-white transition-colors group select-none min-w-[90px]"
+                      >
+                        <div className="flex items-center gap-1.5">
+                          <span>2 Yr (%)</span>
+                          {renderSortIcon('return2Yr')}
+                        </div>
+                      </th>
+
+                      <th 
+                        onClick={() => handleSort('return3Yr')} 
+                        className="p-3.5 cursor-pointer hover:text-white transition-colors group select-none min-w-[90px]"
+                      >
+                        <div className="flex items-center gap-1.5">
+                          <span>3 Yr (%)</span>
+                          {renderSortIcon('return3Yr')}
+                        </div>
+                      </th>
+
+                      <th 
+                        onClick={() => handleSort('return5Yr')} 
+                        className="p-3.5 cursor-pointer hover:text-white transition-colors group select-none min-w-[90px]"
+                      >
+                        <div className="flex items-center gap-1.5">
+                          <span>5 Yr (%)</span>
+                          {renderSortIcon('return5Yr')}
+                        </div>
+                      </th>
+
+                      <th 
+                        onClick={() => handleSort('return10Yr')} 
+                        className="p-3.5 cursor-pointer hover:text-white transition-colors group select-none min-w-[90px]"
+                      >
+                        <div className="flex items-center gap-1.5">
+                          <span>10 Yr (%)</span>
+                          {renderSortIcon('return10Yr')}
+                        </div>
+                      </th>
+                    </>
+                  )
+                ) : (
                   customDaysList.map((d) => {
                     const sortKey = `return_${d}d`;
-                    return (
+                    return selectedPlan === 'both' ? (
+                      <React.Fragment key={d}>
+                        <th 
+                          onClick={() => handleSort(`reg_return_${d}d`)} 
+                          className="p-3.5 cursor-pointer hover:text-white transition-colors group select-none min-w-[90px] text-center"
+                        >
+                          <div className="flex items-center justify-center gap-1">
+                            <span>{d}D Reg</span>
+                            {renderSortIcon(`reg_return_${d}d`)}
+                          </div>
+                        </th>
+                        <th 
+                          onClick={() => handleSort(`dir_return_${d}d`)} 
+                          className="p-3.5 cursor-pointer hover:text-white transition-colors group select-none min-w-[90px] text-center"
+                        >
+                          <div className="flex items-center justify-center gap-1">
+                            <span>{d}D Dir</span>
+                            {renderSortIcon(`dir_return_${d}d`)}
+                          </div>
+                        </th>
+                      </React.Fragment>
+                    ) : (
                       <th 
                         key={d}
                         onClick={() => handleSort(sortKey)} 
@@ -279,7 +379,8 @@ const FundTable = ({
                     <td className="p-3.5"><div className="h-4 bg-slate-800 rounded w-48"></div></td>
                     <td className="p-3.5"><div className="h-4 bg-slate-800 rounded w-20"></div></td>
                     <td className="p-3.5"><div className="h-4 bg-slate-800 rounded w-16"></div></td>
-                    {Array.from({ length: mode === 'yearly' ? 5 : customDaysList.length }).map((__, j) => (
+                    {selectedPlan === 'both' && <td className="p-3.5"><div className="h-4 bg-slate-800 rounded w-16"></div></td>}
+                    {Array.from({ length: selectedPlan === 'both' ? (mode === 'yearly' ? 10 : customDaysList.length * 2) : (mode === 'yearly' ? 5 : customDaysList.length) }).map((__, j) => (
                       <td key={j} className="p-3.5"><div className="h-4 bg-slate-800 rounded w-14 mx-auto"></div></td>
                     ))}
                     <td className="p-3.5"><div className="h-4 bg-slate-800 rounded w-20"></div></td>
@@ -289,7 +390,7 @@ const FundTable = ({
                 ))
               ) : sortedFunds.length === 0 ? (
                 <tr>
-                  <td colSpan={7 + (mode === 'yearly' ? 5 : customDaysList.length)} className="p-12 text-center text-slate-400">
+                  <td colSpan={7 + (selectedPlan === 'both' ? 1 : 0) + (selectedPlan === 'both' ? (mode === 'yearly' ? 10 : customDaysList.length * 2) : (mode === 'yearly' ? 5 : customDaysList.length))} className="p-12 text-center text-slate-400">
                     <div className="flex flex-col items-center justify-center gap-2">
                       <AlertCircle className="h-8 w-8 text-slate-500" />
                       <p className="text-sm font-semibold text-slate-300">No matching schemes found</p>
@@ -341,36 +442,72 @@ const FundTable = ({
                         </span>
                       </td>
 
-                      {/* NAV */}
-                      <td className="p-3.5 whitespace-nowrap font-mono text-[11px] text-slate-200">
-                        {formatNav(fund.currentNav)}
-                      </td>
-
-                      {/* Dynamic Return Columns depending on mode */}
-                      {mode === 'yearly' ? (
+                      {/* NAV Column(s) */}
+                      {selectedPlan === 'both' ? (
                         <>
-                          <td className="p-3.5 whitespace-nowrap font-mono text-[11px]">
-                            {formatPct(fund.return1Yr)}
+                          <td className="p-3.5 whitespace-nowrap font-mono text-[11px] text-slate-200">
+                            {formatNav(fund.regNav ?? fund.currentNav)}
                           </td>
-
-                          <td className="p-3.5 whitespace-nowrap font-mono text-[11px]">
-                            {formatPct(fund.return2Yr)}
-                          </td>
-
-                          <td className="p-3.5 whitespace-nowrap font-mono text-[11px]">
-                            {formatPct(fund.return3Yr)}
-                          </td>
-
-                          <td className="p-3.5 whitespace-nowrap font-mono text-[11px]">
-                            {formatPct(fund.return5Yr)}
-                          </td>
-
-                          <td className="p-3.5 whitespace-nowrap font-mono text-[11px]">
-                            {formatPct(fund.return10Yr)}
+                          <td className="p-3.5 whitespace-nowrap font-mono text-[11px] text-emerald-300">
+                            {formatNav(fund.dirNav ?? fund.currentNav)}
                           </td>
                         </>
                       ) : (
+                        <td className="p-3.5 whitespace-nowrap font-mono text-[11px] text-slate-200">
+                          {formatNav(fund.currentNav)}
+                        </td>
+                      )}
+
+                      {/* Dynamic Return Columns depending on mode */}
+                      {mode === 'yearly' ? (
+                        selectedPlan === 'both' ? (
+                          <>
+                            <td className="p-3.5 whitespace-nowrap font-mono text-[11px] text-center">{formatPct(fund.regReturn1Yr ?? fund.return1Yr)}</td>
+                            <td className="p-3.5 whitespace-nowrap font-mono text-[11px] text-center">{formatPct(fund.dirReturn1Yr ?? fund.return1Yr)}</td>
+                            <td className="p-3.5 whitespace-nowrap font-mono text-[11px] text-center">{formatPct(fund.regReturn2Yr ?? fund.return2Yr)}</td>
+                            <td className="p-3.5 whitespace-nowrap font-mono text-[11px] text-center">{formatPct(fund.dirReturn2Yr ?? fund.return2Yr)}</td>
+                            <td className="p-3.5 whitespace-nowrap font-mono text-[11px] text-center">{formatPct(fund.regReturn3Yr ?? fund.return3Yr)}</td>
+                            <td className="p-3.5 whitespace-nowrap font-mono text-[11px] text-center">{formatPct(fund.dirReturn3Yr ?? fund.return3Yr)}</td>
+                            <td className="p-3.5 whitespace-nowrap font-mono text-[11px] text-center">{formatPct(fund.regReturn5Yr ?? fund.return5Yr)}</td>
+                            <td className="p-3.5 whitespace-nowrap font-mono text-[11px] text-center">{formatPct(fund.dirReturn5Yr ?? fund.return5Yr)}</td>
+                            <td className="p-3.5 whitespace-nowrap font-mono text-[11px] text-center">{formatPct(fund.regReturn10Yr ?? fund.return10Yr)}</td>
+                            <td className="p-3.5 whitespace-nowrap font-mono text-[11px] text-center">{formatPct(fund.dirReturn10Yr ?? fund.return10Yr)}</td>
+                          </>
+                        ) : (
+                          <>
+                            <td className="p-3.5 whitespace-nowrap font-mono text-[11px]">
+                              {formatPct(fund.return1Yr)}
+                            </td>
+
+                            <td className="p-3.5 whitespace-nowrap font-mono text-[11px]">
+                              {formatPct(fund.return2Yr)}
+                            </td>
+
+                            <td className="p-3.5 whitespace-nowrap font-mono text-[11px]">
+                              {formatPct(fund.return3Yr)}
+                            </td>
+
+                            <td className="p-3.5 whitespace-nowrap font-mono text-[11px]">
+                              {formatPct(fund.return5Yr)}
+                            </td>
+
+                            <td className="p-3.5 whitespace-nowrap font-mono text-[11px]">
+                              {formatPct(fund.return10Yr)}
+                            </td>
+                          </>
+                        )
+                      ) : (
                         customDaysList.map((d) => {
+                          if (selectedPlan === 'both') {
+                            const regVal = fund.regDayReturns ? fund.regDayReturns[d] : fund[`reg_return_${d}d`];
+                            const dirVal = fund.dirDayReturns ? fund.dirDayReturns[d] : fund[`dir_return_${d}d`];
+                            return (
+                              <React.Fragment key={d}>
+                                <td className="p-3.5 whitespace-nowrap font-mono text-[11px] text-center">{formatPct(regVal)}</td>
+                                <td className="p-3.5 whitespace-nowrap font-mono text-[11px] text-center">{formatPct(dirVal)}</td>
+                              </React.Fragment>
+                            );
+                          }
                           const val = fund.dayReturns ? fund.dayReturns[d] : fund[`return_${d}d`];
                           return (
                             <td key={d} className="p-3.5 whitespace-nowrap font-mono text-[11px] text-center">

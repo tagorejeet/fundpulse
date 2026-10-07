@@ -81,11 +81,12 @@ export const exportSipToExcel = ({
   };
 
   results.forEach(fund => {
+    const fundPlan = fund.plan ? (fund.plan === 'Benchmark' ? 'NSE Benchmark' : `${fund.plan} Plan`) : planLabel;
     summaryRows.push([
       fund.category || 'Other',
       fund.displayName || fund.amfiSchemeName,
       fund.amcName || '',
-      planLabel,
+      fundPlan,
       Number(monthlySip),
       fund.currentNav ? Number(fund.currentNav) : (fund.navRegular ? Number(fund.navRegular) : 'N/A'),
       parsePct(fund.returns?.return1Yr),

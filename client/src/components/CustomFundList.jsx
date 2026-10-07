@@ -1,6 +1,22 @@
-import React, { useState } from 'react';
-import { FileSpreadsheet, Trash2, AlertTriangle, X, CheckSquare, Sparkles } from 'lucide-react';
-import { exportCustomListToExcel } from '../services/excelExport';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
+import { 
+  FileSpreadsheet, 
+  Trash2, 
+  AlertTriangle, 
+  X, 
+  CheckSquare, 
+  Sparkles, 
+  Building2, 
+  TrendingUp, 
+  Download, 
+  Layers,
+  ChevronDown
+} from 'lucide-react';
+import { 
+  exportCustomListToExcel, 
+  exportNseListToExcel, 
+  exportEverythingToExcel 
+} from '../services/excelExport';
 
 const CATEGORY_ORDER = {
   'Large Cap': 1,
@@ -23,17 +39,107 @@ const CATEGORY_ORDER = {
 
 export const CustomFundList = ({
   funds = [],
+  nseIndices = [],
+  selectedNseIndexIds = new Set(),
+  onToggleSelectNseIndex,
+  onRemoveNseIndex,
   isLoading = false,
   mode = 'yearly',
   customDays = 33,
   customDaysList = [33, 50, 67],
   selectedPlan = 'regular',
+  calculationDate = null,
   onRemoveFund,
   onClearAll,
   meta,
   onSelectFund
 }) => {
   const [showClearConfirm, setShowClearConfirm] = useState(false);
+  const [exportMenuOpen, setExportMenuOpen] = useState(false);
+
+  // Filter selected NSE indices
+  const selectedNseIndicesList = useMemo(() => {
+    if (!nseIndices) return [];
+    return nseIndices.filter(idx => selectedNseIndexIds.has(idx.id));
+  }, [nseIndices, selectedNseIndexIds]);
+
+  // Checked state for AMFI funds (auto pre-checked on load and when new funds added)
+  const [checkedForExportIds, setCheckedForExportIds] = useState(() => new Set(funds.map(f => f.id)));
+  const prevTrackedFundsRef = useRef(new Set());
+
+  // Checked state for NSE indices in Custom List (auto pre-checked)
+  const [checkedNseExportIds, setCheckedNseExportIds] = useState(() => new Set(selectedNseIndicesList.map(i => i.id)));
+  const prevTrackedNseRef = useRef(new Set());
+
+  useEffect(() => {
+    setCheckedForExportIds(prev => {
+      const next = new Set(prev);
+      funds.forEach(f => {
+        if (!prevTrackedFundsRef.current.has(f.id)) {
+          next.add(f.id);
+        }
+      });
+      prevTrackedFundsRef.current = new Set(funds.map(f => f.id));
+      return next;
+    });
+  }, [funds]);
+
+  useEffect(() => {
+    setCheckedNseExportIds(prev => {
+      const next = new Set(prev);
+      selectedNseIndicesList.forEach(i => {
+        if (!prevTrackedNseRef.current.has(i.id)) {
+          next.add(i.id);
+        }
+      });
+      prevTrackedNseRef.current = new Set(selectedNseIndicesList.map(i => i.id));
+      return next;
+    });
+  }, [selectedNseIndicesList]);
+
+  const handleToggleExportFund = (id) => {
+    setCheckedForExportIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const handleToggleNseExport = (id) => {
+    setCheckedNseExportIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const handleToggleCategoryExport = (catFunds) => {
+    const allCatChecked = catFunds.every(f => checkedForExportIds.has(f.id));
+    setCheckedForExportIds(prev => {
+      const next = new Set(prev);
+      if (allCatChecked) catFunds.forEach(f => next.delete(f.id));
+      else catFunds.forEach(f => next.add(f.id));
+      return next;
+    });
+  };
+
+  const handleToggleAllAmfiExport = () => {
+    const allChecked = funds.every(f => checkedForExportIds.has(f.id));
+    setCheckedForExportIds(prev => {
+      if (allChecked) return new Set();
+      return new Set(funds.map(f => f.id));
+    });
+  };
+
+  const handleToggleAllNseExport = () => {
+    const allChecked = selectedNseIndicesList.every(i => checkedNseExportIds.has(i.id));
+    setCheckedNseExportIds(prev => {
+      if (allChecked) return new Set();
+      return new Set(selectedNseIndicesList.map(i => i.id));
+    });
+  };
 
   const formatPct = (val) => {
     if (val === null || val === undefined || isNaN(val)) return <span className="text-slate-500 font-sans">N/A</span>;
@@ -52,250 +158,485 @@ export const CustomFundList = ({
     return `₹${Number(val).toFixed(2)}`;
   };
 
-  // Group funds category-wise
-  const groupedCategories = React.useMemo(() => {
-    if (!funds || funds.length === 0) return [];
+  const formatValue = (val) => {
+    if (val === null || val === undefined || isNaN(val)) return 'N/A';
+    return `₹${Number(val).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  };
 
-    const groupMap = new Map();
+  // Group mutual funds by category
+  const groupedFunds = useMemo(() => {
+    const groups = {};
     funds.forEach(fund => {
       const cat = fund.category || 'Other';
-      if (!groupMap.has(cat)) {
-        groupMap.set(cat, []);
-      }
-      groupMap.get(cat).push(fund);
+      if (!groups[cat]) groups[cat] = [];
+      groups[cat].push(fund);
     });
 
-    // Sort categories according to requested order
-    const catKeys = Array.from(groupMap.keys());
-    catKeys.sort((a, b) => {
-      const orderA = CATEGORY_ORDER[a] || 99;
-      const orderB = CATEGORY_ORDER[b] || 99;
-      if (orderA !== orderB) return orderA - orderB;
-      return a.localeCompare(b);
-    });
-
-    return catKeys.map(catName => {
-      const catFunds = groupMap.get(catName);
-      // Sort alphabetically by displayName within category
-      catFunds.sort((a, b) => a.displayName.localeCompare(b.displayName));
-      return {
-        categoryName: catName,
-        funds: catFunds
-      };
+    return Object.entries(groups).sort(([catA], [catB]) => {
+      const orderA = CATEGORY_ORDER[catA] || 99;
+      const orderB = CATEGORY_ORDER[catB] || 99;
+      return orderA - orderB;
     });
   }, [funds]);
 
-  const handleExport = () => {
+  // Export handlers
+  const handleExportCustomList = () => {
+    const exportableAmfi = funds.filter(f => checkedForExportIds.has(f.id));
+    const exportableNse = selectedNseIndicesList.filter(i => checkedNseExportIds.has(i.id));
     exportCustomListToExcel({
-      funds,
+      funds: exportableAmfi,
+      nseIndices: exportableNse,
       plan: selectedPlan,
       mode,
       customDays,
       customDaysList,
-      reportDate: meta?.reportDate || '28-Sep-2026'
+      reportDate: meta?.reportDate,
+      calculationDate
     });
+    setExportMenuOpen(false);
   };
 
+  const handleExportNseOnly = () => {
+    const exportableNse = selectedNseIndicesList.filter(i => checkedNseExportIds.has(i.id));
+    exportNseListToExcel(exportableNse, calculationDate);
+    setExportMenuOpen(false);
+  };
+
+  const handleExportEverything = () => {
+    const exportableAmfi = funds.filter(f => checkedForExportIds.has(f.id));
+    const exportableNse = selectedNseIndicesList.filter(i => checkedNseExportIds.has(i.id));
+    exportEverythingToExcel({
+      funds: exportableAmfi,
+      nseIndices: exportableNse,
+      plan: selectedPlan,
+      mode,
+      customDays,
+      customDaysList,
+      reportDate: meta?.reportDate,
+      calculationDate
+    });
+    setExportMenuOpen(false);
+  };
+
+  const checkedAmfiCount = funds.filter(f => checkedForExportIds.has(f.id)).length;
+  const checkedNseCount = selectedNseIndicesList.filter(i => checkedNseExportIds.has(i.id)).length;
+  const isBoth = selectedPlan === 'both';
+  const totalCustomItems = funds.length + selectedNseIndicesList.length;
+
   return (
-    <div className="space-y-6 my-4">
-      
-      {/* Top Action Header Bar */}
-      <div className="glass-card p-5 rounded-2xl border border-slate-800 shadow-xl flex flex-col md:flex-row items-center justify-between gap-4">
-        <div className="flex items-center gap-3">
-          <div className="p-2.5 rounded-xl bg-brand-500/10 border border-brand-500/30 text-brand-400">
-            <CheckSquare className="h-6 w-6" />
-          </div>
-          <div>
-            <h2 className="text-lg font-bold text-white flex items-center gap-2">
-              <span>Custom Fund List</span>
-              <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-brand-500/20 text-brand-300 border border-brand-500/40">
-                {funds.length} Schemes Selected
-              </span>
-            </h2>
-            <p className="text-xs text-slate-400 mt-0.5">
-              Personalized selection grouped category-wise • Showing {selectedPlan.toUpperCase()} Plan ({mode === 'days' ? 'Day Returns' : 'Yearly Returns'})
-            </p>
+    <div className="space-y-8 animate-fade-in">
+      {/* Top Controls & Comprehensive Portfolio Counters */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 p-5 rounded-2xl bg-slate-900 border border-slate-800 shadow-xl">
+        <div>
+          <h2 className="text-xl font-bold text-white flex items-center gap-2">
+            <span>Custom Portfolio Selection</span>
+            <span className="text-xs px-2.5 py-0.5 rounded-full font-semibold bg-brand-500/10 text-brand-400 border border-brand-500/30 font-mono">
+              {funds.length} Mutual Funds + {selectedNseIndicesList.length} NSE Indices
+            </span>
+          </h2>
+          <div className="text-xs text-slate-400 mt-1 flex flex-wrap items-center gap-2">
+            <span>AMFI: <strong className="text-white">{checkedAmfiCount}/{funds.length}</strong> checked for export</span>
+            <span>•</span>
+            <span>NSE: <strong className="text-emerald-400">{checkedNseCount}/{selectedNseIndicesList.length}</strong> checked for export</span>
+            <span>•</span>
+            <span className="text-slate-500">Unchecked items remain visible in list</span>
           </div>
         </div>
 
-        <div className="flex items-center gap-3 w-full md:w-auto justify-end">
-          {/* Export Excel Button */}
-          <button
-            onClick={handleExport}
-            disabled={funds.length === 0}
-            className="inline-flex items-center gap-2 px-4 py-2 text-xs font-semibold rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white shadow-lg border border-emerald-500/40 transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            <FileSpreadsheet className="h-4 w-4" />
-            <span>Export Excel</span>
-          </button>
+        {/* Action Buttons & Multi-Option Excel Exporter */}
+        <div className="flex flex-wrap items-center gap-3">
+          {/* Multi-Option Excel Dropdown */}
+          <div className="relative">
+            <button
+              onClick={() => setExportMenuOpen(!exportMenuOpen)}
+              disabled={checkedAmfiCount === 0 && checkedNseCount === 0}
+              className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white font-semibold text-xs transition-all shadow-lg shadow-emerald-600/20"
+            >
+              <FileSpreadsheet className="w-4 h-4" />
+              <span>Export Excel ({checkedAmfiCount + checkedNseCount})</span>
+              <ChevronDown className="w-3.5 h-3.5 ml-0.5" />
+            </button>
+
+            {exportMenuOpen && (
+              <div className="absolute right-0 mt-2 w-64 rounded-xl bg-slate-900 border border-slate-700 shadow-2xl z-30 overflow-hidden py-1.5 animate-scale-up font-sans">
+                <button
+                  onClick={handleExportCustomList}
+                  className="w-full text-left px-4 py-2.5 text-xs text-slate-200 hover:bg-slate-800 hover:text-white flex items-start gap-2.5 transition-colors"
+                >
+                  <Download className="w-4 h-4 text-emerald-400 mt-0.5 shrink-0" />
+                  <div>
+                    <div className="font-semibold">Download Custom List</div>
+                    <div className="text-[10px] text-slate-400">AMFI Mutual Funds + NSE Indices (2 Sheets)</div>
+                  </div>
+                </button>
+
+                <button
+                  onClick={handleExportNseOnly}
+                  disabled={checkedNseCount === 0}
+                  className="w-full text-left px-4 py-2.5 text-xs text-slate-200 hover:bg-slate-800 hover:text-white disabled:opacity-40 flex items-start gap-2.5 transition-colors border-t border-slate-800"
+                >
+                  <TrendingUp className="w-4 h-4 text-brand-400 mt-0.5 shrink-0" />
+                  <div>
+                    <div className="font-semibold">Download NSE List</div>
+                    <div className="text-[10px] text-slate-400">Only selected NSE Indices</div>
+                  </div>
+                </button>
+
+                <button
+                  onClick={handleExportEverything}
+                  className="w-full text-left px-4 py-2.5 text-xs text-slate-200 hover:bg-slate-800 hover:text-white flex items-start gap-2.5 transition-colors border-t border-slate-800"
+                >
+                  <Layers className="w-4 h-4 text-purple-400 mt-0.5 shrink-0" />
+                  <div>
+                    <div className="font-semibold">Download Everything</div>
+                    <div className="text-[10px] text-slate-400">AMFI + NSE + Combined Summary Sheet</div>
+                  </div>
+                </button>
+              </div>
+            )}
+          </div>
 
           {/* Clear All Button */}
-          <button
-            onClick={() => setShowClearConfirm(true)}
-            disabled={funds.length === 0}
-            className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-300 border border-rose-500/30 transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            <Trash2 className="h-4 w-4" />
-            <span>Clear All</span>
-          </button>
+          {totalCustomItems > 0 && (
+            <button
+              onClick={() => setShowClearConfirm(true)}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-800 hover:bg-rose-500/20 text-slate-400 hover:text-rose-300 border border-slate-700/80 hover:border-rose-500/30 text-xs font-semibold transition-all"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+              <span>Clear All</span>
+            </button>
+          )}
         </div>
       </div>
 
-      {/* Main Grouped Custom Fund Table */}
-      {isLoading ? (
-        <div className="glass-card p-12 rounded-2xl border border-slate-800 text-center text-slate-400">
-          <div className="animate-pulse space-y-4 max-w-md mx-auto">
-            <div className="h-4 bg-slate-800 rounded w-3/4 mx-auto"></div>
-            <div className="h-4 bg-slate-800 rounded w-1/2 mx-auto"></div>
+      {/* SECTION 1: CUSTOM MUTUAL FUNDS */}
+      <div className="space-y-4">
+        <div className="flex items-center justify-between pb-2 border-b border-slate-800">
+          <div className="flex items-center gap-2">
+            <Sparkles className="w-4 h-4 text-brand-400" />
+            <h3 className="text-sm font-bold text-white uppercase tracking-wider">
+              Custom Mutual Funds
+            </h3>
+            <span className="text-xs text-slate-400">({funds.length} schemes)</span>
           </div>
+
+          {funds.length > 0 && (
+            <button
+              onClick={handleToggleAllAmfiExport}
+              className="text-[11px] font-semibold text-brand-400 hover:text-brand-300 transition-colors"
+            >
+              {funds.every(f => checkedForExportIds.has(f.id)) ? 'Deselect All AMFI for Export' : 'Select All AMFI for Export'}
+            </button>
+          )}
         </div>
-      ) : funds.length === 0 ? (
-        <div className="glass-card p-12 rounded-2xl border border-slate-800 text-center text-slate-400 space-y-3">
-          <Sparkles className="h-10 w-10 text-slate-600 mx-auto" />
-          <h3 className="text-base font-bold text-slate-200">Your Custom Fund List is Empty</h3>
-          <p className="text-xs text-slate-400 max-w-md mx-auto">
-            Go to the <span className="text-brand-400 font-semibold">All Schemes</span> tab and click the checkbox beside any mutual fund to add it to your custom portfolio list.
-          </p>
-        </div>
-      ) : (
-        <div className="space-y-6">
-          {groupedCategories.map(({ categoryName, funds: catFunds }) => (
-            <div key={categoryName} className="glass-card rounded-2xl border border-slate-800/90 shadow-xl overflow-hidden">
-              
-              {/* Category Header */}
-              <div className="px-5 py-3 bg-slate-900/90 border-b border-slate-800/80 flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <span className="w-2 h-2 rounded-full bg-brand-400"></span>
-                  <h3 className="text-xs font-bold text-white uppercase tracking-wider">{categoryName}</h3>
-                </div>
-                <span className="text-[11px] font-medium text-slate-400 bg-slate-800 px-2 py-0.5 rounded-full border border-slate-700">
-                  {catFunds.length} {catFunds.length === 1 ? 'Scheme' : 'Schemes'}
-                </span>
-              </div>
 
-              {/* Table */}
-              <div className="overflow-x-auto">
-                <table className="w-full text-xs text-left">
-                  <thead className="bg-slate-950/60 text-slate-400 uppercase font-semibold text-[10px] tracking-wider border-b border-slate-800/60">
-                    <tr>
-                      <th className="p-3 pl-4 min-w-[240px]">Scheme Name</th>
-                      <th className="p-3 min-w-[100px]">Current NAV</th>
-                      {mode === 'yearly' ? (
-                        <>
-                          <th className="p-3 min-w-[90px]">1 Yr (%)</th>
-                          <th className="p-3 min-w-[90px]">2 Yr (%)</th>
-                          <th className="p-3 min-w-[90px]">3 Yr (%)</th>
-                          <th className="p-3 min-w-[90px]">5 Yr (%)</th>
-                          <th className="p-3 min-w-[90px]">10 Yr (%)</th>
-                        </>
-                      ) : (
-                        customDaysList.map((d) => (
-                          <th key={d} className="p-3 min-w-[95px] text-center font-semibold">
-                            {d} Days (%)
-                          </th>
-                        ))
-                      )}
-                      <th className="p-3 min-w-[110px]">AUM (Cr)</th>
-                      <th className="p-3 text-right pr-4">Action</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-800/60 font-sans">
-                    {catFunds.map((fund) => (
-                      <tr 
-                        key={fund.id}
-                        onClick={() => onSelectFund && onSelectFund(fund)}
-                        className="hover:bg-slate-800/40 transition-colors cursor-pointer group"
-                      >
-                        {/* Scheme Name */}
-                        <td className="p-3 pl-4">
-                          <div className="font-bold text-white group-hover:text-brand-300 transition-colors">
-                            {fund.displayName}
-                          </div>
-                          <div className="text-[10px] text-slate-400 mt-0.5">
-                            {fund.amcName}
-                          </div>
-                        </td>
+        {funds.length === 0 ? (
+          <div className="p-8 rounded-2xl bg-slate-900/60 border border-slate-800/80 text-center text-slate-400 text-xs">
+            No mutual funds added to Custom List yet. Check the boxes beside schemes in the main table to add them.
+          </div>
+        ) : (
+          <div className="space-y-6">
+            {groupedFunds.map(([category, catFunds]) => {
+              const allCatChecked = catFunds.every(f => checkedForExportIds.has(f.id));
+              return (
+                <div key={category} className="glass-card rounded-2xl border border-slate-800 shadow-xl overflow-hidden">
+                  {/* Category Header */}
+                  <div className="bg-slate-900/90 px-4 py-3 border-b border-slate-800 flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <input
+                        type="checkbox"
+                        checked={allCatChecked}
+                        onChange={() => handleToggleCategoryExport(catFunds)}
+                        title="Toggle export for this category"
+                        className="w-4 h-4 rounded border-slate-700 bg-slate-800 text-brand-600 focus:ring-brand-500 cursor-pointer accent-brand-500"
+                      />
+                      <span className="font-bold text-white text-xs">{category}</span>
+                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-800 text-slate-400 font-mono">
+                        {catFunds.length}
+                      </span>
+                    </div>
 
-                        {/* NAV */}
-                        <td className="p-3 font-mono text-[11px] text-slate-200">
-                          {formatNav(fund.currentNav)}
-                        </td>
+                    <button
+                      onClick={() => handleToggleCategoryExport(catFunds)}
+                      className="text-[11px] text-slate-400 hover:text-white transition-colors"
+                    >
+                      {allCatChecked ? 'Uncheck Category' : 'Check Category'}
+                    </button>
+                  </div>
 
-                        {/* Dynamic Return Columns depending on mode */}
-                        {mode === 'yearly' ? (
-                          <>
-                            <td className="p-3 font-mono text-[11px]">
-                              {formatPct(fund.return1Yr)}
-                            </td>
-
-                            <td className="p-3 font-mono text-[11px]">
-                              {formatPct(fund.return2Yr)}
-                            </td>
-
-                            <td className="p-3 font-mono text-[11px]">
-                              {formatPct(fund.return3Yr)}
-                            </td>
-
-                            <td className="p-3 font-mono text-[11px]">
-                              {formatPct(fund.return5Yr)}
-                            </td>
-
-                            <td className="p-3 font-mono text-[11px]">
-                              {formatPct(fund.return10Yr)}
-                            </td>
-                          </>
-                        ) : (
-                          customDaysList.map((d) => {
-                            const val = fund.dayReturns ? fund.dayReturns[d] : fund[`return_${d}d`];
-                            return (
-                              <td key={d} className="p-3 font-mono text-[11px] text-center">
-                                {formatPct(val)}
+                  {/* Fund Rows */}
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-xs text-left">
+                      <thead className="bg-slate-950/60 text-slate-400 uppercase font-semibold border-b border-slate-800/80">
+                        <tr>
+                          <th className="p-3 w-10 text-center">Export</th>
+                          <th className="p-3 min-w-[200px]">Scheme Name</th>
+                          {isBoth ? (
+                            <>
+                              <th className="p-3">NAV Reg</th>
+                              <th className="p-3">NAV Dir</th>
+                            </>
+                          ) : (
+                            <th className="p-3">NAV</th>
+                          )}
+                          {mode === 'yearly' ? (
+                            isBoth ? (
+                              <>
+                                <th className="p-3 text-center">1Y Reg</th>
+                                <th className="p-3 text-center">1Y Dir</th>
+                                <th className="p-3 text-center">2Y Reg</th>
+                                <th className="p-3 text-center">2Y Dir</th>
+                                <th className="p-3 text-center">3Y Reg</th>
+                                <th className="p-3 text-center">3Y Dir</th>
+                                <th className="p-3 text-center">5Y Reg</th>
+                                <th className="p-3 text-center">5Y Dir</th>
+                                <th className="p-3 text-center">10Y Reg</th>
+                                <th className="p-3 text-center">10Y Dir</th>
+                              </>
+                            ) : (
+                              <>
+                                <th className="p-3 text-center">1Y</th>
+                                <th className="p-3 text-center">2Y</th>
+                                <th className="p-3 text-center">3Y</th>
+                                <th className="p-3 text-center">5Y</th>
+                                <th className="p-3 text-center">10Y</th>
+                              </>
+                            )
+                          ) : (
+                            customDaysList.map(d => isBoth ? (
+                              <React.Fragment key={d}>
+                                <th className="p-3 text-center">{d}D Reg</th>
+                                <th className="p-3 text-center">{d}D Dir</th>
+                              </React.Fragment>
+                            ) : (
+                              <th key={d} className="p-3 text-center">{d}D</th>
+                            ))
+                          )}
+                          <th className="p-3">AUM (Cr)</th>
+                          <th className="p-3 text-right pr-4">Action</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-800/60 font-mono">
+                        {catFunds.map((fund) => {
+                          const isChecked = checkedForExportIds.has(fund.id);
+                          return (
+                            <tr
+                              key={fund.id}
+                              onClick={() => onSelectFund && onSelectFund(fund)}
+                              className={`hover:bg-slate-800/40 cursor-pointer transition-colors ${
+                                !isChecked ? 'opacity-60 bg-slate-950/40' : ''
+                              }`}
+                            >
+                              <td className="p-3 text-center" onClick={(e) => e.stopPropagation()}>
+                                <input
+                                  type="checkbox"
+                                  checked={isChecked}
+                                  onChange={() => handleToggleExportFund(fund.id)}
+                                  className="w-4 h-4 rounded border-slate-700 bg-slate-800 text-brand-600 focus:ring-brand-500 cursor-pointer accent-brand-500"
+                                />
                               </td>
-                            );
-                          })
-                        )}
+                              <td className="p-3 font-sans">
+                                <div className="font-bold text-white text-xs">{fund.displayName}</div>
+                                <div className="text-[10px] text-slate-400 mt-0.5">{fund.amcName}</div>
+                              </td>
+                              {isBoth ? (
+                                <>
+                                  <td className="p-3 text-slate-200">{formatNav(fund.regNav ?? fund.currentNav)}</td>
+                                  <td className="p-3 text-emerald-300">{formatNav(fund.dirNav ?? fund.currentNav)}</td>
+                                </>
+                              ) : (
+                                <td className="p-3 text-slate-200">{formatNav(fund.currentNav)}</td>
+                              )}
+                              {mode === 'yearly' ? (
+                                isBoth ? (
+                                  <>
+                                    <td className="p-3 text-center">{formatPct(fund.regReturn1Yr ?? fund.return1Yr)}</td>
+                                    <td className="p-3 text-center">{formatPct(fund.dirReturn1Yr ?? fund.return1Yr)}</td>
+                                    <td className="p-3 text-center">{formatPct(fund.regReturn2Yr ?? fund.return2Yr)}</td>
+                                    <td className="p-3 text-center">{formatPct(fund.dirReturn2Yr ?? fund.return2Yr)}</td>
+                                    <td className="p-3 text-center">{formatPct(fund.regReturn3Yr ?? fund.return3Yr)}</td>
+                                    <td className="p-3 text-center">{formatPct(fund.dirReturn3Yr ?? fund.return3Yr)}</td>
+                                    <td className="p-3 text-center">{formatPct(fund.regReturn5Yr ?? fund.return5Yr)}</td>
+                                    <td className="p-3 text-center">{formatPct(fund.dirReturn5Yr ?? fund.return5Yr)}</td>
+                                    <td className="p-3 text-center">{formatPct(fund.regReturn10Yr ?? fund.return10Yr)}</td>
+                                    <td className="p-3 text-center">{formatPct(fund.dirReturn10Yr ?? fund.return10Yr)}</td>
+                                  </>
+                                ) : (
+                                  <>
+                                    <td className="p-3 text-center">{formatPct(fund.return1Yr)}</td>
+                                    <td className="p-3 text-center">{formatPct(fund.return2Yr)}</td>
+                                    <td className="p-3 text-center">{formatPct(fund.return3Yr)}</td>
+                                    <td className="p-3 text-center">{formatPct(fund.return5Yr)}</td>
+                                    <td className="p-3 text-center">{formatPct(fund.return10Yr)}</td>
+                                  </>
+                                )
+                              ) : (
+                                customDaysList.map((d) => {
+                                  if (isBoth) {
+                                    const regVal = fund.regDayReturns ? fund.regDayReturns[d] : fund[`reg_return_${d}d`];
+                                    const dirVal = fund.dirDayReturns ? fund.dirDayReturns[d] : fund[`dir_return_${d}d`];
+                                    return (
+                                      <React.Fragment key={d}>
+                                        <td className="p-3 text-center">{formatPct(regVal)}</td>
+                                        <td className="p-3 text-center">{formatPct(dirVal)}</td>
+                                      </React.Fragment>
+                                    );
+                                  }
+                                  const val = fund.dayReturns ? fund.dayReturns[d] : fund[`return_${d}d`];
+                                  return <td key={d} className="p-3 text-center">{formatPct(val)}</td>;
+                                })
+                              )}
+                              <td className="p-3 text-slate-200">{fund.dailyAUMFormatted || 'N/A'}</td>
+                              <td className="p-3 text-right pr-4" onClick={(e) => e.stopPropagation()}>
+                                <button
+                                  onClick={() => onRemoveFund(fund.id)}
+                                  className="p-1.5 rounded-lg bg-rose-500/10 hover:bg-rose-500 text-rose-300 hover:text-white transition-all"
+                                  title="Remove scheme from Custom List"
+                                >
+                                  <Trash2 className="h-3.5 w-3.5" />
+                                </button>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
 
-                        {/* AUM */}
-                        <td className="p-3 font-semibold text-slate-200">
-                          {fund.dailyAUMFormatted || 'N/A'}
+      {/* SECTION 2: NSE INDICES (Dedicated separate container below mutual funds) */}
+      <div className="space-y-4 pt-6 border-t-2 border-slate-800/80">
+        <div className="flex items-center justify-between pb-2 border-b border-slate-800">
+          <div className="flex items-center gap-2">
+            <TrendingUp className="w-4 h-4 text-emerald-400" />
+            <h3 className="text-sm font-bold text-white uppercase tracking-wider">
+              Custom NSE Indices
+            </h3>
+            <span className="text-xs text-slate-400">({selectedNseIndicesList.length} benchmark indices)</span>
+          </div>
+
+          {selectedNseIndicesList.length > 0 && (
+            <button
+              onClick={handleToggleAllNseExport}
+              className="text-[11px] font-semibold text-emerald-400 hover:text-emerald-300 transition-colors"
+            >
+              {selectedNseIndicesList.every(i => checkedNseExportIds.has(i.id)) ? 'Deselect All NSE for Export' : 'Select All NSE for Export'}
+            </button>
+          )}
+        </div>
+
+        {selectedNseIndicesList.length === 0 ? (
+          <div className="p-8 rounded-2xl bg-slate-900/60 border border-slate-800/80 text-center text-slate-400 text-xs">
+            No NSE indices selected yet. Select checkboxes in the "NSE Indices" section at the bottom of the page to add them here.
+          </div>
+        ) : (
+          <div className="glass-card rounded-2xl border border-slate-800 shadow-xl overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs text-left">
+                <thead className="bg-slate-900/90 text-slate-400 uppercase font-semibold border-b border-slate-800/80">
+                  <tr>
+                    <th className="p-3 w-10 text-center">Export</th>
+                    <th className="p-3 min-w-[200px]">Index Name</th>
+                    <th className="p-3 text-right">Value (Close)</th>
+                    {mode === 'days' ? (
+                      customDaysList.map(d => (
+                        <th key={d} className="p-3 text-right min-w-[80px]">{d}D</th>
+                      ))
+                    ) : (
+                      <>
+                        <th className="p-3 text-right">1Y</th>
+                        <th className="p-3 text-right">2Y</th>
+                        <th className="p-3 text-right">3Y</th>
+                        <th className="p-3 text-right">5Y</th>
+                        <th className="p-3 text-right">10Y</th>
+                      </>
+                    )}
+                    <th className="p-3 text-center">Data Date</th>
+                    <th className="p-3 text-right pr-4">Action</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-800/60 font-mono">
+                  {selectedNseIndicesList.map(idx => {
+                    const isChecked = checkedNseExportIds.has(idx.id);
+                    return (
+                      <tr 
+                        key={idx.id} 
+                        className={`hover:bg-slate-800/40 transition-colors ${
+                          !isChecked ? 'opacity-60 bg-slate-950/40' : ''
+                        }`}
+                      >
+                        <td className="p-3 text-center">
+                          <input
+                            type="checkbox"
+                            checked={isChecked}
+                            onChange={() => handleToggleNseExport(idx.id)}
+                            className="w-4 h-4 rounded border-slate-700 bg-slate-800 text-brand-600 focus:ring-brand-500 cursor-pointer accent-brand-500"
+                          />
                         </td>
-
-                        {/* Remove Action */}
+                        <td className="p-3 font-sans">
+                          <div className="font-bold text-white text-xs">{idx.displayName}</div>
+                          <div className="text-[10px] text-brand-300 mt-0.5">{idx.officialName}</div>
+                        </td>
+                        <td className="p-3 text-right font-bold text-white">
+                          {formatValue(idx.currentValue)}
+                        </td>
+                        {mode === 'days' ? (
+                          customDaysList.map(d => (
+                            <td key={d} className="p-3 text-right">
+                              {formatPct(idx.dayReturns?.[d] ?? idx[`return${d}d`])}
+                            </td>
+                          ))
+                        ) : (
+                          <>
+                            <td className="p-3 text-right">{formatPct(idx.return1Yr)}</td>
+                            <td className="p-3 text-right">{formatPct(idx.return2Yr)}</td>
+                            <td className="p-3 text-right">{formatPct(idx.return3Yr)}</td>
+                            <td className="p-3 text-right">{formatPct(idx.return5Yr)}</td>
+                            <td className="p-3 text-right">{formatPct(idx.return10Yr)}</td>
+                          </>
+                        )}
+                        <td className="p-3 text-center text-slate-300">
+                          <span className="px-2 py-0.5 rounded bg-slate-800 border border-slate-700/60">
+                            {idx.dataDate || 'N/A'}
+                          </span>
+                        </td>
                         <td className="p-3 text-right pr-4">
                           <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              onRemoveFund(fund.id);
-                            }}
-                            className="p-1.5 rounded-lg bg-rose-500/10 hover:bg-rose-500 text-rose-300 hover:text-white transition-all shadow-sm"
-                            title="Remove scheme from Custom List"
+                            onClick={() => onRemoveNseIndex && onRemoveNseIndex(idx.id)}
+                            className="p-1.5 rounded-lg bg-rose-500/10 hover:bg-rose-500 text-rose-300 hover:text-white transition-all"
+                            title="Remove index from Custom List"
                           >
                             <Trash2 className="h-3.5 w-3.5" />
                           </button>
                         </td>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+                    );
+                  })}
+                </tbody>
+              </table>
             </div>
-          ))}
-        </div>
-      )}
+          </div>
+        )}
+      </div>
 
       {/* Clear All Confirmation Modal */}
       {showClearConfirm && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm animate-fade-in">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm animate-fade-in font-sans">
           <div className="glass-card max-w-sm w-full p-6 rounded-2xl border border-slate-800 shadow-2xl space-y-4">
             <div className="flex items-center gap-3 text-rose-400">
               <div className="p-2.5 rounded-xl bg-rose-500/10 border border-rose-500/30">
                 <AlertTriangle className="h-6 w-6" />
               </div>
-              <h3 className="text-base font-bold text-white">Clear Custom Fund List?</h3>
+              <h3 className="text-base font-bold text-white">Clear Custom Selection?</h3>
             </div>
             
             <p className="text-xs text-slate-300">
-              Are you sure you want to remove all <span className="font-bold text-white">{funds.length} selected schemes</span> from your Custom Fund List?
+              Are you sure you want to clear your selected mutual funds and NSE indices from the custom list?
             </p>
 
             <div className="flex items-center justify-end gap-3 pt-2">
@@ -318,7 +659,6 @@ export const CustomFundList = ({
           </div>
         </div>
       )}
-
     </div>
   );
 };

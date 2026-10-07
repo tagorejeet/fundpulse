@@ -10,120 +10,461 @@ function getColLetter(colIdx) {
   return letter;
 }
 
+const parseNum = (val) => {
+  if (val === null || val === undefined || val === 'N/A' || isNaN(val)) return 'N/A';
+  return Number(val);
+};
+
+const parsePct = (val) => {
+  if (val === null || val === undefined || val === 'N/A' || isNaN(val)) return 'N/A';
+  return Number(val) / 100;
+};
+
 /**
- * Custom Fund List Excel Exporter matching exact layout with dynamic custom day columns
+ * Creates the AMFI Custom Funds Worksheet
  */
-export const exportCustomListToExcel = ({
+export function createAmfiWorksheet({
   funds = [],
   plan = 'regular',
   mode = 'yearly',
   customDays = 33,
   customDaysList = [33, 50, 67],
-  reportDate = '28-Sep-2026'
-}) => {
-  if (!funds || funds.length === 0) return;
-
-  const todayStr = new Date().toISOString().split('T')[0];
-  const planLabel = plan.toLowerCase() === 'direct' ? 'Direct Plan' : 'Regular Plan';
+  reportDate = '28-Sep-2026',
+  calculationDate = null
+}) {
+  const isBoth = plan.toLowerCase() === 'both';
+  const planLabel = isBoth ? 'BOTH (Regular & Direct Plans)' : plan.toLowerCase() === 'direct' ? 'Direct Plan' : 'Regular Plan';
   const isDaysMode = mode === 'days';
+  const calcDateStr = calculationDate || new Date().toISOString().split('T')[0];
 
-  const dayHeaders = customDaysList.map(d => `${d} Days (%)`);
+  let tableHeaders = [];
+  let pctStartColIdx = 4;
 
-  const tableHeaders = isDaysMode
-    ? ['Category', 'Scheme Name', 'AUM (Cr)', ...dayHeaders]
-    : ['Category', 'Scheme Name', 'AUM (Cr)', '1 Yr (%)', '2 Yr (%)', '3 Yr (%)', '5 Yr (%)', '10 Yr (%)'];
+  if (isBoth) {
+    pctStartColIdx = 5;
+    if (isDaysMode) {
+      const dayHeaders = customDaysList.flatMap(d => [`${d}D Reg (%)`, `${d}D Dir (%)`]);
+      tableHeaders = ['Category', 'Scheme Name', 'AUM (Cr)', 'NAV Reg', 'NAV Dir', ...dayHeaders];
+    } else {
+      tableHeaders = [
+        'Category',
+        'Scheme Name',
+        'AUM (Cr)',
+        'NAV Reg',
+        'NAV Dir',
+        '1 Yr Reg (%)',
+        '1 Yr Dir (%)',
+        '2 Yr Reg (%)',
+        '2 Yr Dir (%)',
+        '3 Yr Reg (%)',
+        '3 Yr Dir (%)',
+        '5 Yr Reg (%)',
+        '5 Yr Dir (%)',
+        '10 Yr Reg (%)',
+        '10 Yr Dir (%)'
+      ];
+    }
+  } else {
+    pctStartColIdx = 4;
+    if (isDaysMode) {
+      const dayHeaders = customDaysList.map(d => `${d} Days (%)`);
+      tableHeaders = ['Category', 'Scheme Name', 'AUM (Cr)', 'Current NAV', ...dayHeaders];
+    } else {
+      tableHeaders = [
+        'Category',
+        'Scheme Name',
+        'AUM (Cr)',
+        'Current NAV',
+        '1 Yr (%)',
+        '2 Yr (%)',
+        '3 Yr (%)',
+        '5 Yr (%)',
+        '10 Yr (%)'
+      ];
+    }
+  }
 
-  // Header rows
   const wsData = [
     ['FundPulse — Custom Mutual Fund Performance Selection'],
-    [`AMFI Data Date: ${reportDate}`, `Calculation Date: ${todayStr}`, `Plan: ${planLabel}`, `Mode: ${isDaysMode ? 'Day Calculation' : 'Yearly Performance'}`],
-    [], // empty spacing row
+    [`AMFI Data Date: ${reportDate}`, `Valuation / Calculation Date: ${calcDateStr}`, `Plan: ${planLabel}`, `Mode: ${isDaysMode ? 'Day Calculation' : 'Yearly Performance'}`],
+    [],
     tableHeaders
   ];
 
-  // Helper to format values
-  const parseNum = (val) => {
-    if (val === null || val === undefined || val === 'N/A' || isNaN(val)) return 'N/A';
-    return Number(val);
-  };
-
-  const parsePct = (val) => {
-    if (val === null || val === undefined || val === 'N/A' || isNaN(val)) return 'N/A';
-    return Number(val) / 100;
-  };
-
-  // Populate fund rows
   funds.forEach(fund => {
-    if (isDaysMode) {
-      const dayValues = customDaysList.map(d => {
-        const val = fund.dayReturns ? fund.dayReturns[d] : fund[`return_${d}d`];
-        return parsePct(val);
-      });
-      wsData.push([
-        fund.category || 'Other',
-        fund.displayName || fund.amfiSchemeName,
-        parseNum(fund.dailyAUMRaw),
-        ...dayValues
-      ]);
+    if (isBoth) {
+      const regNav = parseNum(fund.regNav ?? fund.nav);
+      const dirNav = parseNum(fund.dirNav);
+      if (isDaysMode) {
+        const dayVals = customDaysList.flatMap(d => [
+          parsePct(fund[`regReturn${d}d`] ?? fund[`return${d}d`]),
+          parsePct(fund[`dirReturn${d}d`])
+        ]);
+        wsData.push([
+          fund.category || 'N/A',
+          fund.displayName || fund.schemeName || 'N/A',
+          parseNum(fund.aum),
+          regNav,
+          dirNav,
+          ...dayVals
+        ]);
+      } else {
+        wsData.push([
+          fund.category || 'N/A',
+          fund.displayName || fund.schemeName || 'N/A',
+          parseNum(fund.aum),
+          regNav,
+          dirNav,
+          parsePct(fund.regReturn1Yr ?? fund.return1Yr),
+          parsePct(fund.dirReturn1Yr),
+          parsePct(fund.regReturn2Yr ?? fund.return2Yr),
+          parsePct(fund.dirReturn2Yr),
+          parsePct(fund.regReturn3Yr ?? fund.return3Yr),
+          parsePct(fund.dirReturn3Yr),
+          parsePct(fund.regReturn5Yr ?? fund.return5Yr),
+          parsePct(fund.dirReturn5Yr),
+          parsePct(fund.regReturn10Yr ?? fund.return10Yr),
+          parsePct(fund.dirReturn10Yr)
+        ]);
+      }
     } else {
-      wsData.push([
-        fund.category || 'Other',
-        fund.displayName || fund.amfiSchemeName,
-        parseNum(fund.dailyAUMRaw),
-        parsePct(fund.return1Yr),
-        parsePct(fund.return2Yr),
-        parsePct(fund.return3Yr),
-        parsePct(fund.return5Yr),
-        parsePct(fund.return10Yr)
-      ]);
+      if (isDaysMode) {
+        const dayVals = customDaysList.map(d => parsePct(fund[`return${d}d`]));
+        wsData.push([
+          fund.category || 'N/A',
+          fund.displayName || fund.schemeName || 'N/A',
+          parseNum(fund.aum),
+          parseNum(fund.nav),
+          ...dayVals
+        ]);
+      } else {
+        wsData.push([
+          fund.category || 'N/A',
+          fund.displayName || fund.schemeName || 'N/A',
+          parseNum(fund.aum),
+          parseNum(fund.nav),
+          parsePct(fund.return1Yr),
+          parsePct(fund.return2Yr),
+          parsePct(fund.return3Yr),
+          parsePct(fund.return5Yr),
+          parsePct(fund.return10Yr)
+        ]);
+      }
     }
   });
 
   const worksheet = XLSX.utils.aoa_to_sheet(wsData);
 
-  // Set numeric cell formats
-  // Header starts at row 5 (0-indexed row 4)
+  const numReturnCols = tableHeaders.length - pctStartColIdx;
+  const pctColLetters = Array.from({ length: numReturnCols }).map((_, i) => getColLetter(pctStartColIdx + i));
   const startRow = 5;
-  const numReturnCols = isDaysMode ? customDaysList.length : 5;
-  const pctColLetters = [];
-  for (let c = 3; c < 3 + numReturnCols; c++) {
-    pctColLetters.push(getColLetter(c));
-  }
 
-  for (let i = 0; i < funds.length; i++) {
-    const rowIdx = startRow + i; // 1-indexed Excel row number
-
-    // AUM column C
+  for (let r = 0; r < funds.length; r++) {
+    const rowIdx = startRow + r;
     const cellC = worksheet[`C${rowIdx}`];
-    if (cellC && typeof cellC.v === 'number') {
-      cellC.z = '#,##0.00';
+    if (cellC && typeof cellC.v === 'number') cellC.z = '#,##0.00';
+
+    const cellD = worksheet[`D${rowIdx}`];
+    if (cellD && typeof cellD.v === 'number') cellD.z = '#,##0.00';
+
+    if (isBoth) {
+      const cellE = worksheet[`E${rowIdx}`];
+      if (cellE && typeof cellE.v === 'number') cellE.z = '#,##0.00';
     }
 
-    // Percentage columns
     pctColLetters.forEach(col => {
       const cell = worksheet[`${col}${rowIdx}`];
-      if (cell && typeof cell.v === 'number') {
-        cell.z = '0.00%';
-      }
+      if (cell && typeof cell.v === 'number') cell.z = '0.00%';
     });
   }
 
-  // Column widths
   const returnColWidths = Array.from({ length: numReturnCols }).map(() => ({ wch: 14 }));
-  worksheet['!cols'] = [
-    { wch: 22 }, // Category
-    { wch: 48 }, // Scheme Name
-    { wch: 16 }, // AUM (Cr)
-    ...returnColWidths
+  const prefixCols = isBoth 
+    ? [{ wch: 22 }, { wch: 48 }, { wch: 16 }, { wch: 14 }, { wch: 14 }]
+    : [{ wch: 22 }, { wch: 48 }, { wch: 16 }, { wch: 14 }];
+
+  worksheet['!cols'] = [...prefixCols, ...returnColWidths];
+  const lastColLetter = getColLetter(tableHeaders.length - 1);
+  if (funds.length > 0) {
+    worksheet['!autofilter'] = { ref: `A4:${lastColLetter}${startRow + funds.length - 1}` };
+  }
+
+  return worksheet;
+}
+
+/**
+ * Creates the NSE Indices Worksheet
+ */
+export function createNseWorksheet(indices = [], calculationDate = null, mode = 'yearly', customDaysList = [33, 50, 67]) {
+  const calcDateStr = calculationDate || new Date().toISOString().split('T')[0];
+  const isDaysMode = mode === 'days';
+  const daysListToUse = (customDaysList && customDaysList.length > 0) ? customDaysList : (indices[0]?.customDaysList || [33, 50, 67]);
+
+  const headers = isDaysMode ? [
+    'Category',
+    'Index Name',
+    'Official Name',
+    'Index Value (Close)',
+    ...daysListToUse.map(d => `${d} Days (%)`),
+    'Data Date'
+  ] : [
+    'Category',
+    'Index Name',
+    'Official Name',
+    'Index Value (Close)',
+    '1Y (%)',
+    '2Y (%)',
+    '3Y (%)',
+    '5Y (%)',
+    '10Y (%)',
+    'Data Date'
   ];
 
-  // AutoFilter on header row
-  const lastColLetter = getColLetter(2 + numReturnCols);
-  worksheet['!autofilter'] = { ref: `A4:${lastColLetter}${startRow + funds.length - 1}` };
+  const wsData = [
+    ['FundPulse — Official NSE Benchmark Indices'],
+    [
+      'Source: NSE India / NSE Indices',
+      `Valuation Date: ${calcDateStr}`,
+      isDaysMode
+        ? `Formula: 4 * ((VT / V0)^(365 / (4 * D)) - 1)`
+        : 'Formula: 4 * ((VT / V0)^(1 / (4 * T)) - 1)'
+    ],
+    [],
+    headers
+  ];
+
+  indices.forEach(idx => {
+    if (isDaysMode) {
+      const dayVals = daysListToUse.map(d => parsePct(idx.dayReturns?.[d] ?? idx[`return${d}d`]));
+      wsData.push([
+        'NSE Index',
+        idx.displayName || idx.id,
+        idx.officialName || idx.id,
+        parseNum(idx.currentValue),
+        ...dayVals,
+        idx.dataDate || 'N/A'
+      ]);
+    } else {
+      wsData.push([
+        'NSE Index',
+        idx.displayName || idx.id,
+        idx.officialName || idx.id,
+        parseNum(idx.currentValue),
+        parsePct(idx.return1Yr),
+        parsePct(idx.return2Yr),
+        parsePct(idx.return3Yr),
+        parsePct(idx.return5Yr),
+        parsePct(idx.return10Yr),
+        idx.dataDate || 'N/A'
+      ]);
+    }
+  });
+
+  const worksheet = XLSX.utils.aoa_to_sheet(wsData);
+  const startRow = 5;
+  const numReturnCols = headers.length - 5; // 4 prefix cols, 1 suffix col (Data Date)
+
+  for (let r = 0; r < indices.length; r++) {
+    const rowIdx = startRow + r;
+    // Value col D
+    const cellD = worksheet[`D${rowIdx}`];
+    if (cellD && typeof cellD.v === 'number') cellD.z = '#,##0.00';
+
+    for (let c = 0; c < numReturnCols; c++) {
+      const colLetter = getColLetter(4 + c);
+      const cell = worksheet[`${colLetter}${rowIdx}`];
+      if (cell && typeof cell.v === 'number') cell.z = '0.00%';
+    }
+  }
+
+  const dynamicCols = [
+    { wch: 18 }, // Category
+    { wch: 24 }, // Index Name
+    { wch: 24 }, // Official Name
+    { wch: 18 }, // Value
+    ...Array.from({ length: numReturnCols }).map(() => ({ wch: 14 })),
+    { wch: 16 }  // Data Date
+  ];
+  worksheet['!cols'] = dynamicCols;
+
+  if (indices.length > 0) {
+    const lastColLetter = getColLetter(headers.length - 1);
+    worksheet['!autofilter'] = { ref: `A4:${lastColLetter}${startRow + indices.length - 1}` };
+  }
+
+  return worksheet;
+}
+
+/**
+ * Creates the Combined Summary Worksheet (AMFI Mutual Funds + NSE Indices)
+ */
+export function createCombinedSummaryWorksheet(funds = [], indices = [], reportDate = '', calculationDate = null) {
+  const calcDateStr = calculationDate || new Date().toISOString().split('T')[0];
+  const headers = [
+    'Type',
+    'Category',
+    'Name',
+    'AUM / Index Value',
+    '1Y (%)',
+    '2Y (%)',
+    '3Y (%)',
+    '5Y (%)',
+    '10Y (%)',
+    'Data Date'
+  ];
+
+  const wsData = [
+    ['FundPulse — Combined Performance Summary (Mutual Funds & NSE Indices)'],
+    [`Valuation / Calculation Date: ${calcDateStr}`, 'Standard Formula: 4 * ((VT / V0)^(1 / (4 * T)) - 1)'],
+    [],
+    headers
+  ];
+
+  // 1. Add Mutual Funds
+  funds.forEach(fund => {
+    wsData.push([
+      'Mutual Fund',
+      fund.category || 'N/A',
+      fund.displayName || fund.schemeName || 'N/A',
+      parseNum(fund.aum),
+      parsePct(fund.return1Yr),
+      parsePct(fund.return2Yr),
+      parsePct(fund.return3Yr),
+      parsePct(fund.return5Yr),
+      parsePct(fund.return10Yr),
+      fund.reportDate || reportDate || 'N/A'
+    ]);
+  });
+
+  // 2. Add NSE Indices
+  indices.forEach(idx => {
+    wsData.push([
+      'NSE Index',
+      'NSE Index',
+      idx.displayName || idx.id,
+      parseNum(idx.currentValue),
+      parsePct(idx.return1Yr),
+      parsePct(idx.return2Yr),
+      parsePct(idx.return3Yr),
+      parsePct(idx.return5Yr),
+      parsePct(idx.return10Yr),
+      idx.dataDate || 'N/A'
+    ]);
+  });
+
+  const worksheet = XLSX.utils.aoa_to_sheet(wsData);
+  const totalRows = funds.length + indices.length;
+  const startRow = 5;
+
+  for (let r = 0; r < totalRows; r++) {
+    const rowIdx = startRow + r;
+    const cellD = worksheet[`D${rowIdx}`];
+    if (cellD && typeof cellD.v === 'number') cellD.z = '#,##0.00';
+
+    ['E', 'F', 'G', 'H', 'I'].forEach(col => {
+      const cell = worksheet[`${col}${rowIdx}`];
+      if (cell && typeof cell.v === 'number') cell.z = '0.00%';
+    });
+  }
+
+  worksheet['!cols'] = [
+    { wch: 16 }, // Type
+    { wch: 22 }, // Category
+    { wch: 48 }, // Name
+    { wch: 20 }, // AUM / Value
+    { wch: 14 }, // 1Y
+    { wch: 14 }, // 2Y
+    { wch: 14 }, // 3Y
+    { wch: 14 }, // 5Y
+    { wch: 14 }, // 10Y
+    { wch: 16 }  // Data Date
+  ];
+
+  if (totalRows > 0) {
+    worksheet['!autofilter'] = { ref: `A4:J${startRow + totalRows - 1}` };
+  }
+
+  return worksheet;
+}
+
+/**
+ * EXPORT 1: Download Custom List (Selected AMFI Funds + Selected NSE Indices in 1 workbook)
+ */
+export const exportCustomListToExcel = ({
+  funds = [],
+  nseIndices = [],
+  plan = 'regular',
+  mode = 'yearly',
+  customDays = 33,
+  customDaysList = [33, 50, 67],
+  reportDate = '28-Sep-2026',
+  calculationDate = null
+}) => {
+  const workbook = XLSX.utils.book_new();
+  const todayStr = calculationDate || new Date().toISOString().split('T')[0];
+
+  // Sheet 1: Custom Fund List
+  if (funds && funds.length > 0) {
+    const amfiWs = createAmfiWorksheet({ funds, plan, mode, customDays, customDaysList, reportDate, calculationDate });
+    XLSX.utils.book_append_sheet(workbook, amfiWs, 'Custom Fund List');
+  }
+
+  // Sheet 2: NSE Indices
+  if (nseIndices && nseIndices.length > 0) {
+    const nseWs = createNseWorksheet(nseIndices, calculationDate, mode, customDaysList);
+    XLSX.utils.book_append_sheet(workbook, nseWs, 'NSE Indices');
+  }
+
+  // If both are empty, don't export
+  if (workbook.SheetNames.length === 0) return;
+
+  const fileName = `FundPulse_Custom_List_${plan}_${todayStr}.xlsx`;
+  XLSX.writeFile(workbook, fileName);
+};
+
+/**
+ * EXPORT 2: Download NSE List (Only selected NSE indices)
+ */
+export const exportNseListToExcel = (indices = [], calculationDate = null, mode = 'yearly', customDaysList = [33, 50, 67]) => {
+  if (!indices || indices.length === 0) return;
+  const todayStr = calculationDate || new Date().toISOString().split('T')[0];
 
   const workbook = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(workbook, worksheet, 'Custom Fund Selection');
+  const nseWs = createNseWorksheet(indices, calculationDate, mode, customDaysList);
+  XLSX.utils.book_append_sheet(workbook, nseWs, 'NSE Indices');
 
-  const fileName = `FundPulse_Custom_Fund_List_${mode}_${todayStr}.xlsx`;
+  const fileName = `FundPulse_NSE_Indices_${todayStr}.xlsx`;
+  XLSX.writeFile(workbook, fileName);
+};
+
+/**
+ * EXPORT 3: Download Everything (Sheet 1: AMFI, Sheet 2: NSE, Sheet 3: Combined Summary)
+ */
+export const exportEverythingToExcel = ({
+  funds = [],
+  nseIndices = [],
+  plan = 'regular',
+  mode = 'yearly',
+  customDays = 33,
+  customDaysList = [33, 50, 67],
+  reportDate = '28-Sep-2026',
+  calculationDate = null
+}) => {
+  const workbook = XLSX.utils.book_new();
+  const todayStr = calculationDate || new Date().toISOString().split('T')[0];
+
+  // Sheet 1: AMFI Custom Funds
+  const amfiWs = createAmfiWorksheet({ funds, plan, mode, customDays, customDaysList, reportDate, calculationDate });
+  XLSX.utils.book_append_sheet(workbook, amfiWs, 'Custom Fund List');
+
+  // Sheet 2: NSE Custom Indices
+  const nseWs = createNseWorksheet(nseIndices, calculationDate, mode, customDaysList);
+  XLSX.utils.book_append_sheet(workbook, nseWs, 'NSE Indices');
+
+  // Sheet 3: Combined Summary
+  const summaryWs = createCombinedSummaryWorksheet(funds, nseIndices, reportDate, calculationDate);
+  XLSX.utils.book_append_sheet(workbook, summaryWs, 'Combined Summary');
+
+  const fileName = `FundPulse_Complete_Portfolio_${plan}_${todayStr}.xlsx`;
   XLSX.writeFile(workbook, fileName);
 };

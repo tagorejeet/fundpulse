@@ -11,7 +11,8 @@ const logger = require('../utils/logger');
  */
 const getFunds = async (req, res) => {
   try {
-    const { category, search, plan = 'regular', page = 1, limit = 50, days, customDays, startDate, endDate } = req.query;
+    const { category, search, plan = 'regular', page = 1, limit = 50, days, customDays, startDate, endDate, asOfDate, calculationDate, date } = req.query;
+    const resolvedAsOfDate = asOfDate || calculationDate || date || null;
     
     const result = await amfiService.getFunds({
       category,
@@ -21,7 +22,8 @@ const getFunds = async (req, res) => {
       limit,
       days: days || customDays,
       startDate,
-      endDate
+      endDate,
+      asOfDate: resolvedAsOfDate
     });
 
     const categories = await amfiService.getCategories();
@@ -56,14 +58,16 @@ const getFunds = async (req, res) => {
  */
 const getBatchFunds = async (req, res) => {
   try {
-    const { ids = [], plan = 'regular', days, customDays, startDate, endDate } = req.body;
+    const { ids = [], plan = 'regular', days, customDays, startDate, endDate, asOfDate, calculationDate, date } = req.body;
+    const resolvedAsOfDate = asOfDate || calculationDate || date || null;
 
     const result = await amfiService.getBatchFunds({
       ids,
       plan,
       days: days || customDays,
       startDate,
-      endDate
+      endDate,
+      asOfDate: resolvedAsOfDate
     });
 
     res.json({
@@ -93,7 +97,8 @@ const getBatchFunds = async (req, res) => {
 const getFundById = async (req, res) => {
   try {
     const { id } = req.params;
-    const { plan = 'regular', days, customDays, startDate, endDate } = req.query;
+    const { plan = 'regular', days, customDays, startDate, endDate, asOfDate, calculationDate, date } = req.query;
+    const resolvedAsOfDate = asOfDate || calculationDate || date || null;
 
     const scheme = amfiService.schemeMap.get(id);
 
@@ -104,7 +109,7 @@ const getFundById = async (req, res) => {
       });
     }
 
-    const computed = await amfiService.computeReturnsForScheme(scheme, plan, days || customDays, startDate, endDate);
+    const computed = await amfiService.computeReturnsForScheme(scheme, plan, days || customDays, startDate, endDate, resolvedAsOfDate);
 
     res.json({
       success: true,

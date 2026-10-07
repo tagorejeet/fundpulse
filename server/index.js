@@ -57,6 +57,8 @@ app.use((err, req, res, next) => {
 });
 
 // Start listening & prime initial cache
+const nseService = require('./services/nseService');
+
 app.listen(PORT, async () => {
   logger.info(`FundPulse Backend Server running on port ${PORT}`);
   logger.info(`Environment: ${process.env.NODE_ENV || 'development'}`);
@@ -66,5 +68,13 @@ app.listen(PORT, async () => {
     logger.info(`Initial AMFI Cache Primed successfully! Date: ${data.reportDate}, Matched: ${data.matchedCount}/34 funds.`);
   } catch (err) {
     logger.error('Initial AMFI Cache Priming failed:', err.message);
+  }
+
+  logger.info('Priming initial official NSE Indices cache...');
+  try {
+    const nseData = await nseService.getNSEIndexData();
+    logger.info(`Initial NSE Indices Cache Primed successfully! Indices: ${nseData.indices?.length || 0}`);
+  } catch (err) {
+    logger.error('Initial NSE Cache Priming failed:', err.message);
   }
 });

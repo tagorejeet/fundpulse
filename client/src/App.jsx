@@ -8,10 +8,13 @@ import DayDatePicker from './components/DayDatePicker';
 import FundDetailModal from './components/FundDetailModal';
 import DisclaimerFooter from './components/DisclaimerFooter';
 import SipCalculator from './components/SipCalculator/SipCalculator';
-import { fetchFunds, fetchBatchFunds, triggerRefresh } from './services/api';
-import { AlertTriangle, RefreshCw } from 'lucide-react';
+import NseIndicesTable from './components/NseSection/NseIndicesTable';
+import { fetchFunds, fetchBatchFunds, triggerRefresh, fetchNSEIndices, triggerNSERefresh } from './services/api';
+import { exportNseListToExcel } from './services/excelExport';
+import { AlertTriangle, RefreshCw, CheckCircle2 } from 'lucide-react';
 
 const LOCAL_STORAGE_KEY = 'fundpulse_custom_fund_ids';
+const LOCAL_STORAGE_NSE_KEY = 'fundpulse_selected_nse_indices';
 
 export function App() {
   // Top-Level Application Mode: 'analysis' (Fund Analysis) | 'sip' (SIP Calculator)
@@ -19,6 +22,7 @@ export function App() {
 
   // Navigation & View State (for Fund Analysis mode)
   const [activeTab, setActiveTab] = useState('all'); // 'all' | 'custom'
+  const [sipActiveTab, setSipActiveTab] = useState('calculator'); // 'calculator' | 'custom'
   const [mode, setMode] = useState('yearly'); // 'yearly' | 'days'
   const [selectedPlan, setSelectedPlan] = useState('regular'); // 'regular' | 'direct'
   const [activeCategory, setActiveCategory] = useState('all');
@@ -55,6 +59,7 @@ export function App() {
 
   const [customDaysList, setCustomDaysList] = useState([33, 50, 67]);
   const [customDays, setCustomDays] = useState(33);
+  const [calculationDate, setCalculationDate] = useState(() => new Date().toISOString().split('T')[0]);
   const [startDate, setStartDate] = useState(() => {
     const d = new Date();
     d.setDate(d.getDate() - 33);
@@ -103,6 +108,101 @@ export function App() {
     }
   }, [selectedFundIds]);
 
+  // Persistent Selected NSE Index IDs (Default to all 4 indices pre-selected)
+  const [selectedNseIndexIds, setSelectedNseIndexIds] = useState(() => {
+    try {
+      const saved = localStorage.getItem(LOCAL_STORAGE_NSE_KEY);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) return new Set(parsed);
+      }
+    } catch (e) {
+      console.error('Error loading saved NSE selection:', e);
+    }
+    return new Set(['NIFTY 50', 'NIFTY 500', 'NIFTY MIDCAP 150', 'NIFTY SMALLCAP 250']);
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(LOCAL_STORAGE_NSE_KEY, JSON.stringify(Array.from(selectedNseIndexIds)));
+    } catch (e) {
+      console.error('Error saving NSE selection:', e);
+    }
+  }, [selectedNseIndexIds]);
+
+  // Official NSE Indices Data State
+  const [nseIndices, setNseIndices] = useState([]);
+  const [nseMeta, setNseMeta] = useState(null);
+  const [isLoadingNse, setIsLoadingNse] = useState(true);
+  const [refreshStatusMessage, setRefreshStatusMessage] = useState(null);
+
+  // Load Official NSE Benchmark Indices for the selected valuation date & day intervals
+  const loadNseIndices = useCallback(async (dateToUse, daysList = customDaysList, sDate = startDate, eDate = endDate) => {
+    setIsLoadingNse(true);
+    try {
+      const res = await fetchNSEIndices(dateToUse, {
+        days: daysList,
+        startDate: sDate,
+        endDate: eDate
+      });
+      if (res?.success) {
+        setNseIndices(res.indices || []);
+        setNseMeta({
+          source: res.source,
+          selectedDate: res.selectedDate,
+          lastUpdated: res.lastUpdated,
+          isCached: res.isCached,
+          customDaysList: res.customDaysList
+        });
+      }
+    } catch (err) {
+      console.error('Failed to load official NSE indices:', err);
+    } finally {
+      setIsLoadingNse(false);
+    }
+  }, [customDaysList, startDate, endDate]);
+
+  useEffect(() => {
+    loadNseIndices(calculationDate, customDaysList, startDate, endDate);
+  }, [calculationDate, customDaysList, startDate, endDate, loadNseIndices]);
+
+  // Handlers for NSE Index selection & export
+  const handleToggleSelectNseIndex = (id) => {
+    setSelectedNseIndexIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const handleToggleSelectAllNse = (filteredIndices) => {
+    if (!filteredIndices || filteredIndices.length === 0) return;
+    const allSelected = filteredIndices.every(i => selectedNseIndexIds.has(i.id));
+    setSelectedNseIndexIds(prev => {
+      const next = new Set(prev);
+      if (allSelected) {
+        filteredIndices.forEach(i => next.delete(i.id));
+      } else {
+        filteredIndices.forEach(i => next.add(i.id));
+      }
+      return next;
+    });
+  };
+
+  const handleRemoveNseIndex = (id) => {
+    setSelectedNseIndexIds(prev => {
+      const next = new Set(prev);
+      next.delete(id);
+      return next;
+    });
+  };
+
+  const handleExportNseExcel = (selectedIds) => {
+    const toExport = nseIndices.filter(i => selectedIds.has(i.id));
+    exportNseListToExcel(toExport, calculationDate);
+  };
+
   // Load Main Paginated Schemes
   const loadFunds = useCallback(async (
     cat = activeCategory,
@@ -111,7 +211,8 @@ export function App() {
     p = page,
     daysList = customDaysList,
     sDate = startDate,
-    eDate = endDate
+    eDate = endDate,
+    calcDate = calculationDate
   ) => {
     const requestId = ++activeRequestIdRef.current;
     setIsLoading(true);
@@ -126,7 +227,8 @@ export function App() {
         limit: 50,
         days: formattedDays,
         startDate: sDate,
-        endDate: eDate
+        endDate: eDate,
+        asOfDate: calcDate
       });
 
       // Ignore response if a newer search/pagination request was triggered
@@ -151,7 +253,7 @@ export function App() {
         setIsLoading(false);
       }
     }
-  }, [activeCategory, debouncedSearchQuery, selectedPlan, page, customDaysList, startDate, endDate]);
+  }, [activeCategory, debouncedSearchQuery, selectedPlan, page, customDaysList, startDate, endDate, calculationDate]);
 
   // Load Batch Schemes for Custom Fund List
   const loadCustomFunds = useCallback(async (
@@ -159,7 +261,8 @@ export function App() {
     plan = selectedPlan,
     daysList = customDaysList,
     sDate = startDate,
-    eDate = endDate
+    eDate = endDate,
+    calcDate = calculationDate
   ) => {
     if (!idsSet || idsSet.size === 0) {
       setCustomFunds([]);
@@ -174,7 +277,8 @@ export function App() {
         plan,
         days: formattedDays,
         startDate: sDate,
-        endDate: eDate
+        endDate: eDate,
+        asOfDate: calcDate
       });
       setCustomFunds(res.data.funds || []);
     } catch (err) {
@@ -182,29 +286,42 @@ export function App() {
     } finally {
       setIsCustomLoading(false);
     }
-  }, [selectedFundIds, selectedPlan, customDaysList, startDate, endDate]);
+  }, [selectedFundIds, selectedPlan, customDaysList, startDate, endDate, calculationDate]);
 
   // Initial Load & Effect triggers
   useEffect(() => {
-    loadFunds(activeCategory, debouncedSearchQuery, selectedPlan, page, customDaysList, startDate, endDate);
-  }, [activeCategory, debouncedSearchQuery, selectedPlan, page, customDaysList, startDate, endDate, loadFunds]);
+    loadFunds(activeCategory, debouncedSearchQuery, selectedPlan, page, customDaysList, startDate, endDate, calculationDate);
+  }, [activeCategory, debouncedSearchQuery, selectedPlan, page, customDaysList, startDate, endDate, calculationDate, loadFunds]);
 
   useEffect(() => {
     if (activeTab === 'custom') {
-      loadCustomFunds(selectedFundIds, selectedPlan, customDaysList, startDate, endDate);
+      loadCustomFunds(selectedFundIds, selectedPlan, customDaysList, startDate, endDate, calculationDate);
     }
-  }, [activeTab, selectedFundIds, selectedPlan, customDaysList, startDate, endDate, loadCustomFunds]);
+  }, [activeTab, selectedFundIds, selectedPlan, customDaysList, startDate, endDate, calculationDate, loadCustomFunds]);
 
   const handleApplyCustomDays = ({ customDaysList: newDaysList, startDate: newStart, endDate: newEnd }) => {
     const validList = (newDaysList && newDaysList.length > 0) ? newDaysList : [33, 50, 67];
     setCustomDaysList(validList);
     setCustomDays(validList[0] || 33);
     if (newStart) setStartDate(newStart);
-    if (newEnd) setEndDate(newEnd);
+    if (newEnd) {
+      setEndDate(newEnd);
+      setCalculationDate(newEnd);
+    }
     setPage(1);
-    loadFunds(activeCategory, searchQuery, selectedPlan, 1, validList, newStart, newEnd);
+    loadFunds(activeCategory, searchQuery, selectedPlan, 1, validList, newStart, newEnd, newEnd || calculationDate);
     if (selectedFundIds.size > 0) {
-      loadCustomFunds(selectedFundIds, selectedPlan, validList, newStart, newEnd);
+      loadCustomFunds(selectedFundIds, selectedPlan, validList, newStart, newEnd, newEnd || calculationDate);
+    }
+  };
+
+  const handleSelectCalculationDate = (newDate) => {
+    setCalculationDate(newDate);
+    setEndDate(newDate);
+    setPage(1);
+    loadFunds(activeCategory, searchQuery, selectedPlan, 1, customDaysList, startDate, newDate, newDate);
+    if (selectedFundIds.size > 0) {
+      loadCustomFunds(selectedFundIds, selectedPlan, customDaysList, startDate, newDate, newDate);
     }
   };
 
@@ -246,11 +363,16 @@ export function App() {
 
   const handleClearAll = () => {
     setSelectedFundIds(new Set());
+    setSelectedNseIndexIds(new Set());
     setCustomFunds([]);
   };
 
   const handleManualRefresh = async () => {
     setIsRefreshing(true);
+    setRefreshStatusMessage('Refreshing AMFI data...');
+    let amfiSuccess = false;
+    let nseSuccess = false;
+
     try {
       const refreshRes = await triggerRefresh();
       if (refreshRes?.data?.reportDate) {
@@ -260,14 +382,39 @@ export function App() {
           lastUpdated: refreshRes.data.lastUpdated || new Date().toISOString()
         }));
       }
-      await loadFunds(activeCategory, searchQuery, selectedPlan, page, customDaysList, startDate, endDate);
+      amfiSuccess = true;
+    } catch (err) {
+      console.error('AMFI refresh error:', err);
+    }
+
+    setRefreshStatusMessage('Refreshing NSE data...');
+    try {
+      await triggerNSERefresh();
+      await loadNseIndices(calculationDate);
+      nseSuccess = true;
+    } catch (err) {
+      console.error('NSE refresh error:', err);
+    }
+
+    try {
+      await loadFunds(activeCategory, searchQuery, selectedPlan, page, customDaysList, startDate, endDate, calculationDate);
       if (selectedFundIds.size > 0) {
-        await loadCustomFunds(selectedFundIds, selectedPlan, customDaysList, startDate, endDate);
+        await loadCustomFunds(selectedFundIds, selectedPlan, customDaysList, startDate, endDate, calculationDate);
       }
     } catch (err) {
-      setError(err.message || 'Failed to refresh AMFI data.');
+      console.error('Reload error:', err);
     } finally {
       setIsRefreshing(false);
+      if (amfiSuccess && nseSuccess) {
+        setRefreshStatusMessage('Data refreshed successfully.');
+      } else if (amfiSuccess && !nseSuccess) {
+        setRefreshStatusMessage('AMFI refreshed successfully. NSE data could not be refreshed.');
+      } else if (!amfiSuccess && nseSuccess) {
+        setRefreshStatusMessage('NSE refreshed successfully. AMFI data could not be refreshed.');
+      } else {
+        setRefreshStatusMessage('Failed to refresh data. Showing cached records.');
+      }
+      setTimeout(() => setRefreshStatusMessage(null), 5000);
     }
   };
 
@@ -298,7 +445,27 @@ export function App() {
         selectedPlan={selectedPlan}
         onSelectPlan={(plan) => setSelectedPlan(plan)}
         selectedCount={selectedFundIds.size}
+        nseSelectedCount={selectedNseIndexIds.size}
+        calculationDate={calculationDate}
+        onSelectCalculationDate={handleSelectCalculationDate}
+        sipActiveTab={sipActiveTab}
+        onSelectSipTab={(tab) => setSipActiveTab(tab)}
+        sipCustomCount={selectedFundIds.size}
       />
+
+      {/* Manual Refresh Status Toast Banner */}
+      {refreshStatusMessage && (
+        <div className="max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 pt-3">
+          <div className="flex items-center gap-2.5 px-4 py-2.5 rounded-xl bg-slate-900 border border-brand-500/30 text-white text-xs shadow-lg animate-fade-in">
+            {isRefreshing ? (
+              <RefreshCw className="w-4 h-4 text-brand-400 animate-spin shrink-0" />
+            ) : (
+              <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+            )}
+            <span className="font-medium">{refreshStatusMessage}</span>
+          </div>
+        </div>
+      )}
 
       {/* Main Container */}
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
@@ -309,7 +476,7 @@ export function App() {
             <h3 className="text-lg font-bold text-white">AMFI Data Unavailable</h3>
             <p className="text-xs text-rose-200/80 max-w-md mx-auto">{error}</p>
             <button
-              onClick={() => loadFunds(activeCategory, searchQuery, selectedPlan, page, customDays, startDate, endDate)}
+              onClick={() => loadFunds(activeCategory, searchQuery, selectedPlan, page, customDays, startDate, endDate, calculationDate)}
               className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white text-xs font-semibold shadow-lg transition-all"
             >
               <RefreshCw className="h-3.5 w-3.5" /> Retry Fetching AMFI Data
@@ -325,6 +492,9 @@ export function App() {
             meta={meta}
             selectedPlan={selectedPlan}
             onSelectPlan={(plan) => setSelectedPlan(plan)}
+            initialCalculationDate={calculationDate}
+            activeSipTab={sipActiveTab}
+            onSelectSipTab={(tab) => setSipActiveTab(tab)}
           />
         )}
 
@@ -342,6 +512,8 @@ export function App() {
                 customDaysList={customDaysList}
                 startDate={startDate}
                 endDate={endDate}
+                calculationDate={calculationDate}
+                onSelectCalculationDate={handleSelectCalculationDate}
                 onApplyCustomDays={handleApplyCustomDays}
                 meta={meta}
               />
@@ -375,6 +547,7 @@ export function App() {
                   customDaysList={customDaysList}
                   startDate={startDate}
                   endDate={endDate}
+                  calculationDate={calculationDate}
                   selectedPlan={selectedPlan}
                   selectedFundIds={selectedFundIds}
                   onToggleSelectFund={handleToggleSelectFund}
@@ -394,12 +567,17 @@ export function App() {
             {activeTab === 'custom' && (
               <CustomFundList
                 funds={customFunds}
+                nseIndices={nseIndices}
+                selectedNseIndexIds={selectedNseIndexIds}
+                onToggleSelectNseIndex={handleToggleSelectNseIndex}
+                onRemoveNseIndex={handleRemoveNseIndex}
                 isLoading={isCustomLoading}
                 mode={mode}
                 customDays={customDays}
                 customDaysList={customDaysList}
                 startDate={startDate}
                 endDate={endDate}
+                calculationDate={calculationDate}
                 selectedPlan={selectedPlan}
                 onRemoveFund={handleRemoveFund}
                 onClearAll={handleClearAll}
@@ -407,6 +585,23 @@ export function App() {
                 onSelectFund={(fund) => setSelectedFundModal(fund)}
               />
             )}
+
+            {/* SEPARATE NSE BENCHMARK INDICES SECTION (Bottom of Main Dashboard) */}
+            <NseIndicesTable
+              indices={nseIndices}
+              isLoading={isLoadingNse}
+              selectedDate={calculationDate}
+              mode={mode}
+              customDaysList={customDaysList}
+              source={nseMeta?.source || 'NSE India / NSE Indices'}
+              lastUpdated={nseMeta?.lastUpdated}
+              isCached={nseMeta?.isCached}
+              selectedNseIndexIds={selectedNseIndexIds}
+              onToggleSelectIndex={handleToggleSelectNseIndex}
+              onToggleSelectAll={handleToggleSelectAllNse}
+              onExportNseExcel={handleExportNseExcel}
+              onRefreshNse={() => triggerNSERefresh().then(() => loadNseIndices(calculationDate, customDaysList, startDate, endDate))}
+            />
           </>
         )}
 

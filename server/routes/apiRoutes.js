@@ -37,4 +37,11 @@ router.post('/refresh', refreshLimiter, fundController.refreshData);
 router.post('/sip/calculate', sipController.calculateSip);
 router.get('/sip/nav-history/:id', sipController.getNavHistoryForFund);
 
+// Official NSE Benchmark Indices Routes
+const nseController = require('../controllers/nseController');
+router.get('/nse/indices', nseController.getIndices);
+router.get('/nse/indices/:id', nseController.getIndexById);
+router.get('/nse/data', nseController.getIndices);
+router.post('/nse/refresh', refreshLimiter, nseController.refreshData);
+
 module.exports = router;

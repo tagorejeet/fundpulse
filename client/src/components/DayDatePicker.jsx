@@ -7,6 +7,8 @@ const DayDatePicker = ({
   customDaysList = [33, 50, 67],
   startDate = '',
   endDate = '',
+  calculationDate = '',
+  onSelectCalculationDate,
   onApplyCustomDays,
   meta
 }) => {
@@ -17,10 +19,17 @@ const DayDatePicker = ({
   const [days, setDays] = useState(customDaysList || [33, 50, 67]);
   const [dayInput, setDayInput] = useState('');
   
-  // Date range calculator tool state
+  // Date range calculator tool state: V_T End Date defaults to calculationDate or endDate
   const [rangeStart, setRangeStart] = useState(startDate || '');
-  const [rangeEnd, setRangeEnd] = useState(endDate || todayStr);
+  const [rangeEnd, setRangeEnd] = useState(calculationDate || endDate || todayStr);
   const [rangeCalculatedDays, setRangeCalculatedDays] = useState(null);
+
+  // Sync rangeEnd with external calculationDate prop
+  useEffect(() => {
+    if (calculationDate) {
+      setRangeEnd(calculationDate);
+    }
+  }, [calculationDate]);
 
   // Sync with prop updates
   useEffect(() => {
@@ -250,15 +259,28 @@ const DayDatePicker = ({
                 onChange={(e) => setRangeStart(e.target.value)}
                 className="w-full px-2 py-1 text-xs rounded-lg bg-slate-900 text-white border border-slate-700 focus:outline-none focus:border-emerald-500"
               />
+              {rangeStart && (
+                <span className="text-[9px] font-bold text-brand-300 block mt-0.5">
+                  {new Date(rangeStart).toLocaleDateString('en-US', { weekday: 'short' })}
+                </span>
+              )}
             </div>
             <div>
               <span className="text-[10px] text-slate-400 block mb-1">VT End Date</span>
               <input
                 type="date"
                 value={rangeEnd}
-                onChange={(e) => setRangeEnd(e.target.value)}
+                onChange={(e) => {
+                  setRangeEnd(e.target.value);
+                  if (onSelectCalculationDate) onSelectCalculationDate(e.target.value);
+                }}
                 className="w-full px-2 py-1 text-xs rounded-lg bg-slate-900 text-white border border-slate-700 focus:outline-none focus:border-emerald-500"
               />
+              {rangeEnd && (
+                <span className="text-[9px] font-bold text-emerald-400 block mt-0.5">
+                  {new Date(rangeEnd).toLocaleDateString('en-US', { weekday: 'short' })}
+                </span>
+              )}
             </div>
           </div>
 

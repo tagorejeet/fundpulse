@@ -14,6 +14,7 @@
 
 const logger = require('../utils/logger');
 const { MASTER_ALLOWLIST, MASTER_CATEGORIES, CATEGORY_DISPLAY_ORDER } = require('../config/masterList');
+const { fuzzyFilterSchemes } = require('../utils/fuzzySearch');
 
 const AMFI_CACHE_TTL = parseInt(process.env.AMFI_CACHE_TTL || '3600', 10); // seconds
 
@@ -491,15 +492,15 @@ class AmfiService {
   }
 
   /**
-   * Calculate 1Y, 2Y, 3Y, 5Y, 10Y and custom days (e.g. 33, 50, 67, etc.) formula returns for a scheme under the requested plan
+   * Calculate returns for a single plan (Regular or Direct)
    */
-  async computeReturnsForScheme(scheme, plan = 'regular', customDays = '33,50,67', startDate = null, endDate = null) {
+  async computeSinglePlanReturns(scheme, plan = 'regular', customDays = '33,50,67', startDate = null, endDate = null, asOfDate = null) {
     const isDirect = plan.toLowerCase() === 'direct';
     const schemeCode = (isDirect ? scheme.directSchemeCode : scheme.regularSchemeCode) || scheme.regularSchemeCode || scheme.directSchemeCode;
     const daysList = parseDaysList(customDays);
 
     if (schemeCode) {
-      const cacheKey = `${schemeCode}_${isDirect ? 'dir' : 'reg'}_${daysList.join(',')}_${startDate || ''}_${endDate || ''}`;
+      const cacheKey = `${schemeCode}_${isDirect ? 'dir' : 'reg'}_${daysList.join(',')}_${startDate || ''}_${endDate || ''}_${asOfDate || ''}`;
       const cached = this.computedCache.get(cacheKey);
       if (cached && (Date.now() - cached.timestamp < AMFI_CACHE_TTL * 1000)) {
         return cached.data;
@@ -527,8 +528,8 @@ class AmfiService {
       resultReturns.dayReturns[d] = null;
     });
 
-    // If seed returns are available for predefined benchmark items, use as immediate fallback
-    if (scheme.seedReturns) {
+    // If seed returns are available for predefined benchmark items and no asOfDate, use as immediate fallback
+    if (scheme.seedReturns && !asOfDate) {
       const sr = isDirect ? scheme.seedReturns.direct : scheme.seedReturns.regular;
       if (sr) {
         resultReturns.return1Yr = sr.r1;
@@ -549,14 +550,25 @@ class AmfiService {
       return resultReturns;
     }
 
-    const latestObj = navList[0];
+    // Determine anchor valuation NAV (latest or as-of-date)
+    let latestObj = navList[0];
+    if (asOfDate) {
+      const targetValDate = parseNavDate(asOfDate);
+      if (!isNaN(targetValDate.getTime()) && targetValDate.getTime() > 0) {
+        const found = navList.find(item => parseNavDate(item.date).getTime() <= targetValDate.getTime());
+        if (found) {
+          latestObj = found;
+        }
+      }
+    }
+
     const VT = Number(latestObj.nav);
     const latestDate = parseNavDate(latestObj.date);
 
     resultReturns.currentNav = VT;
     resultReturns.navDate = latestObj.date;
 
-    // Yearly formula returns
+    // Yearly formula returns calculated backwards from valuation date
     const periods = [
       { key: 'return1Yr', T: 1 },
       { key: 'return2Yr', T: 2 },
@@ -579,7 +591,7 @@ class AmfiService {
       }
     });
 
-    // Custom Days formula returns for any user-provided days (e.g. 33, 50, 67, etc.)
+    // Custom Days formula returns calculated backwards from valuation date
     daysList.forEach((D) => {
       const targetDate = new Date(latestDate);
       targetDate.setDate(targetDate.getDate() - D);
@@ -623,11 +635,58 @@ class AmfiService {
     }
 
     if (schemeCode) {
-      const cacheKey = `${schemeCode}_${isDirect ? 'dir' : 'reg'}_${daysList.join(',')}_${startDate || ''}_${endDate || ''}`;
+      const cacheKey = `${schemeCode}_${isDirect ? 'dir' : 'reg'}_${daysList.join(',')}_${startDate || ''}_${endDate || ''}_${asOfDate || ''}`;
       this.computedCache.set(cacheKey, { data: resultReturns, timestamp: Date.now() });
     }
 
     return resultReturns;
+  }
+
+  /**
+   * Calculate 1Y, 2Y, 3Y, 5Y, 10Y and custom days formula returns for a scheme under the requested plan ('regular', 'direct', or 'both')
+   */
+  async computeReturnsForScheme(scheme, plan = 'regular', customDays = '33,50,67', startDate = null, endDate = null, asOfDate = null) {
+    if (plan && plan.toLowerCase() === 'both') {
+      const reg = await this.computeSinglePlanReturns(scheme, 'regular', customDays, startDate, endDate, asOfDate);
+      const dir = await this.computeSinglePlanReturns(scheme, 'direct', customDays, startDate, endDate, asOfDate);
+      const daysList = parseDaysList(customDays);
+
+      const combined = {
+        ...reg,
+        planUsed: 'Both',
+        currentNav: reg.currentNav || dir.currentNav,
+        navDate: reg.navDate || dir.navDate,
+        // Regular Plan values
+        regNav: reg.currentNav,
+        regNavDate: reg.navDate,
+        regReturn1Yr: reg.return1Yr,
+        regReturn2Yr: reg.return2Yr,
+        regReturn3Yr: reg.return3Yr,
+        regReturn5Yr: reg.return5Yr,
+        regReturn10Yr: reg.return10Yr,
+        regDayReturns: reg.dayReturns,
+        // Direct Plan values
+        dirNav: dir.currentNav,
+        dirNavDate: dir.navDate,
+        dirReturn1Yr: dir.return1Yr,
+        dirReturn2Yr: dir.return2Yr,
+        dirReturn3Yr: dir.return3Yr,
+        dirReturn5Yr: dir.return5Yr,
+        dirReturn10Yr: dir.return10Yr,
+        dirDayReturns: dir.dayReturns,
+        returnsRegular: reg,
+        returnsDirect: dir
+      };
+
+      daysList.forEach(d => {
+        combined[`reg_return_${d}d`] = reg[`return_${d}d`];
+        combined[`dir_return_${d}d`] = dir[`return_${d}d`];
+      });
+
+      return combined;
+    }
+
+    return this.computeSinglePlanReturns(scheme, plan, customDays, startDate, endDate, asOfDate);
   }
 
   /**
@@ -661,7 +720,7 @@ class AmfiService {
   /**
    * Get filtered and paginated schemes with calculated returns
    */
-  async getFunds({ category = 'all', search = '', plan = 'regular', page = 1, limit = 50, days, customDays = '33,50,67', startDate = null, endDate = null }) {
+  async getFunds({ category = 'all', search = '', plan = 'regular', page = 1, limit = 50, days, customDays = '33,50,67', startDate = null, endDate = null, asOfDate = null }) {
     await this.initializeMasterRegistry();
 
     const daysParam = days || customDays;
@@ -678,14 +737,9 @@ class AmfiService {
       );
     }
 
-    // Search Filter
+    // Fuzzy / Typo-tolerant Search Filter
     if (search && search.trim() !== '') {
-      const q = search.trim().toLowerCase();
-      filtered = filtered.filter(s =>
-        s.displayName.toLowerCase().includes(q) ||
-        s.amcName.toLowerCase().includes(q) ||
-        s.category.toLowerCase().includes(q)
-      );
+      filtered = fuzzyFilterSchemes(filtered, search.trim());
     }
 
     const total = filtered.length;
@@ -699,7 +753,7 @@ class AmfiService {
     // Compute returns for current page items asynchronously
     const fundsWithReturns = await Promise.all(
       pageItems.map(async (scheme) => {
-        const computed = await this.computeReturnsForScheme(scheme, plan, daysList, startDate, endDate);
+        const computed = await this.computeReturnsForScheme(scheme, plan, daysList, startDate, endDate, asOfDate);
         return {
           id: scheme.id,
           displayName: scheme.displayName,
@@ -711,30 +765,9 @@ class AmfiService {
           riskometerScheme: scheme.riskometerScheme,
           dailyAUMRaw: scheme.dailyAUMRaw,
           dailyAUMFormatted: scheme.dailyAUMFormatted,
-          plan: computed.planUsed,
-          currentNav: computed.currentNav,
-          navDate: computed.navDate,
-          return1Yr: computed.return1Yr,
-          return2Yr: computed.return2Yr,
-          return3Yr: computed.return3Yr,
-          return5Yr: computed.return5Yr,
-          return10Yr: computed.return10Yr,
-          dayReturns: computed.dayReturns,
-          customDaysList: computed.customDaysList,
-          ...Object.fromEntries(
-            Object.keys(computed)
-              .filter(k => k.startsWith('return_'))
-              .map(k => [k, computed[k]])
-          ),
-          return15D: computed.return15D,
-          return30D: computed.return30D,
-          return45D: computed.return45D,
-          return60D: computed.return60D,
-          return180D: computed.return180D,
-          returnCustomD: computed.returnCustomD,
-          customDays: computed.customDays,
           regularSchemeCode: scheme.regularSchemeCode,
-          directSchemeCode: scheme.directSchemeCode
+          directSchemeCode: scheme.directSchemeCode,
+          ...computed
         };
       })
     );
@@ -754,7 +787,7 @@ class AmfiService {
   /**
    * Get Batch Funds for Custom Fund List (grouped category-wise and sorted alphabetically)
    */
-  async getBatchFunds({ ids = [], plan = 'regular', days, customDays = '33,50,67', startDate = null, endDate = null }) {
+  async getBatchFunds({ ids = [], plan = 'regular', days, customDays = '33,50,67', startDate = null, endDate = null, asOfDate = null }) {
     await this.initializeMasterRegistry();
 
     const daysParam = days || customDays;
@@ -771,7 +804,7 @@ class AmfiService {
     // Compute returns for selected funds
     const fundsWithReturns = await Promise.all(
       matchedSchemes.map(async (scheme) => {
-        const computed = await this.computeReturnsForScheme(scheme, plan, daysList, startDate, endDate);
+        const computed = await this.computeReturnsForScheme(scheme, plan, daysList, startDate, endDate, asOfDate);
         return {
           id: scheme.id,
           displayName: scheme.displayName,
@@ -783,28 +816,9 @@ class AmfiService {
           riskometerScheme: scheme.riskometerScheme,
           dailyAUMRaw: scheme.dailyAUMRaw,
           dailyAUMFormatted: scheme.dailyAUMFormatted,
-          plan: computed.planUsed,
-          currentNav: computed.currentNav,
-          navDate: computed.navDate,
-          return1Yr: computed.return1Yr,
-          return2Yr: computed.return2Yr,
-          return3Yr: computed.return3Yr,
-          return5Yr: computed.return5Yr,
-          return10Yr: computed.return10Yr,
-          dayReturns: computed.dayReturns,
-          customDaysList: computed.customDaysList,
-          ...Object.fromEntries(
-            Object.keys(computed)
-              .filter(k => k.startsWith('return_'))
-              .map(k => [k, computed[k]])
-          ),
-          return15D: computed.return15D,
-          return30D: computed.return30D,
-          return45D: computed.return45D,
-          return60D: computed.return60D,
-          return180D: computed.return180D,
-          returnCustomD: computed.returnCustomD,
-          customDays: computed.customDays
+          regularSchemeCode: scheme.regularSchemeCode,
+          directSchemeCode: scheme.directSchemeCode,
+          ...computed
         };
       })
     );

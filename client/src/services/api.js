@@ -4,7 +4,7 @@
 
 const API_BASE = '/api';
 
-export const fetchFunds = async ({ category = 'all', search = '', plan = 'regular', page = 1, limit = 50, days, customDays = '33,50,67', startDate, endDate } = {}) => {
+export const fetchFunds = async ({ category = 'all', search = '', plan = 'regular', page = 1, limit = 50, days, customDays = '33,50,67', startDate, endDate, asOfDate, calculationDate } = {}) => {
   const params = new URLSearchParams();
   if (category && category !== 'all') params.append('category', category);
   if (search && search.trim()) params.append('search', search.trim());
@@ -20,6 +20,11 @@ export const fetchFunds = async ({ category = 'all', search = '', plan = 'regula
   }
   if (startDate) params.append('startDate', startDate);
   if (endDate) params.append('endDate', endDate);
+  const dateVal = asOfDate || calculationDate;
+  if (dateVal) {
+    params.append('asOfDate', dateVal);
+    params.append('calculationDate', dateVal);
+  }
 
   const response = await fetch(`${API_BASE}/funds?${params.toString()}`);
   if (!response.ok) {
@@ -29,20 +34,30 @@ export const fetchFunds = async ({ category = 'all', search = '', plan = 'regula
   return response.json();
 };
 
-export const fetchBatchFunds = async ({ ids = [], plan = 'regular', days, customDays = '33,50,67', startDate, endDate } = {}) => {
+export const fetchBatchFunds = async ({ ids = [], plan = 'regular', days, customDays = '33,50,67', startDate, endDate, asOfDate, calculationDate } = {}) => {
   if (!ids || ids.length === 0) {
     return { success: true, data: { funds: [], total: 0 } };
   }
 
   const rawDays = days || customDays;
   const formattedDays = Array.isArray(rawDays) ? rawDays.join(',') : String(rawDays);
+  const dateVal = asOfDate || calculationDate;
 
   const response = await fetch(`${API_BASE}/funds/batch`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json'
     },
-    body: JSON.stringify({ ids, plan, days: formattedDays, customDays: formattedDays, startDate, endDate })
+    body: JSON.stringify({
+      ids,
+      plan,
+      days: formattedDays,
+      customDays: formattedDays,
+      startDate,
+      endDate,
+      asOfDate: dateVal,
+      calculationDate: dateVal
+    })
   });
 
   if (!response.ok) {
@@ -52,7 +67,7 @@ export const fetchBatchFunds = async ({ ids = [], plan = 'regular', days, custom
   return response.json();
 };
 
-export const fetchFundById = async (id, plan = 'regular', days, customDays = '33,50,67', startDate, endDate) => {
+export const fetchFundById = async (id, plan = 'regular', days, customDays = '33,50,67', startDate, endDate, asOfDate, calculationDate) => {
   const params = new URLSearchParams();
   if (plan) params.append('plan', plan);
   const rawDays = days || customDays;
@@ -63,6 +78,11 @@ export const fetchFundById = async (id, plan = 'regular', days, customDays = '33
   }
   if (startDate) params.append('startDate', startDate);
   if (endDate) params.append('endDate', endDate);
+  const dateVal = asOfDate || calculationDate;
+  if (dateVal) {
+    params.append('asOfDate', dateVal);
+    params.append('calculationDate', dateVal);
+  }
 
   const response = await fetch(`${API_BASE}/funds/${id}?${params.toString()}`);
   if (!response.ok) {
@@ -125,3 +145,58 @@ export const fetchSipNavHistory = async (fundId, plan = 'regular') => {
   }
   return response.json();
 };
+
+// Official NSE Benchmark Indices API
+export const fetchNSEIndices = async (date = null, { days = null, customDays = null, startDate = null, endDate = null } = {}) => {
+  const params = new URLSearchParams();
+  if (date) {
+    params.append('date', date);
+  }
+  if (days) {
+    params.append('days', Array.isArray(days) ? days.join(',') : String(days));
+  }
+  if (customDays) {
+    params.append('customDays', customDays);
+  }
+  if (startDate) {
+    params.append('startDate', startDate);
+  }
+  if (endDate) {
+    params.append('endDate', endDate);
+  }
+  const queryStr = params.toString();
+  const response = await fetch(`${API_BASE}/nse/indices${queryStr ? '?' + queryStr : ''}`);
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(errorData.error || 'Official NSE data is temporarily unavailable.');
+  }
+  return response.json();
+};
+
+export const fetchNSEIndexById = async (id, date = null) => {
+  const params = new URLSearchParams();
+  if (date) {
+    params.append('date', date);
+  }
+  const response = await fetch(`${API_BASE}/nse/indices/${encodeURIComponent(id)}?${params.toString()}`);
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(errorData.error || 'Failed to fetch official NSE index details.');
+  }
+  return response.json();
+};
+
+export const triggerNSERefresh = async () => {
+  const response = await fetch(`${API_BASE}/nse/refresh`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json'
+    }
+  });
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(errorData.error || 'Failed to refresh official NSE data.');
+  }
+  return response.json();
+};
+

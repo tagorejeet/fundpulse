@@ -15,9 +15,16 @@ const Header = ({
   onSelectMode,
   selectedPlan = 'regular',
   onSelectPlan,
-  selectedCount = 0
+  selectedCount = 0,
+  nseSelectedCount = 0,
+  calculationDate = '',
+  onSelectCalculationDate,
+  sipActiveTab = 'calculator',
+  onSelectSipTab,
+  sipCustomCount = 0
 }) => {
   const { theme, toggleTheme } = useTheme();
+  const todayStr = React.useMemo(() => new Date().toISOString().split('T')[0], []);
 
   return (
     <header className="sticky top-0 z-40 w-full glass-card border-b border-slate-800/80 shadow-lg">
@@ -178,12 +185,44 @@ const Header = ({
                   <span className={`ml-1 px-2 py-0.2 rounded-full text-[10px] font-extrabold ${
                     activeTab === 'custom' ? 'bg-white/20 text-white' : 'bg-slate-800 text-brand-400 border border-brand-500/30'
                   }`}>
-                    {selectedCount}
+                    {nseSelectedCount > 0 ? `${selectedCount} MF + ${nseSelectedCount} NSE` : selectedCount}
                   </span>
                 </button>
               </div>
 
-              {/* Regular / Direct Plan Segmented Switch */}
+              {/* Calculation / Valuation Date Tab */}
+              <div className="flex items-center gap-1.5 whitespace-nowrap">
+                <span className="text-xs font-semibold text-slate-400 flex items-center gap-1">
+                  <Calendar className="h-3.5 w-3.5 text-amber-400" />
+                  <span>Date:</span>
+                </span>
+                <div className="flex items-center gap-1 p-1 bg-slate-900/90 rounded-xl border border-slate-800">
+                  <input
+                    type="date"
+                    value={calculationDate || todayStr}
+                    onChange={(e) => onSelectCalculationDate && onSelectCalculationDate(e.target.value)}
+                    className="px-2 py-1 rounded-lg text-xs font-semibold bg-slate-950 text-white border border-slate-700/80 focus:outline-none focus:border-brand-500"
+                    title="Valuation / Anchor NAV Date"
+                  />
+                  {calculationDate && (
+                    <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-slate-800 text-brand-300 border border-slate-700/60" title={new Date(calculationDate).toLocaleDateString('en-US', { weekday: 'long' })}>
+                      {new Date(calculationDate).toLocaleDateString('en-US', { weekday: 'short' })}
+                    </span>
+                  )}
+                  {calculationDate && calculationDate !== todayStr && (
+                    <button
+                      type="button"
+                      onClick={() => onSelectCalculationDate && onSelectCalculationDate(todayStr)}
+                      className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-slate-800 hover:bg-slate-700 text-brand-300 border border-slate-700 transition-all"
+                      title="Reset date to Today"
+                    >
+                      Today
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {/* Regular / Direct / Both Plan Segmented Switch */}
               <div className="flex items-center gap-2 whitespace-nowrap">
                 <span className="text-xs font-semibold text-slate-400">Plan:</span>
                 <div className="flex items-center p-1 bg-slate-900/90 rounded-xl border border-slate-800">
@@ -208,8 +247,66 @@ const Header = ({
                   >
                     Direct
                   </button>
+
+                  <button
+                    onClick={() => onSelectPlan('both')}
+                    className={`px-3 py-1 rounded-lg text-xs font-bold transition-all ${
+                      selectedPlan === 'both'
+                        ? 'bg-gradient-to-r from-indigo-600 to-emerald-600 text-white shadow-sm'
+                        : 'text-slate-400 hover:text-white'
+                    }`}
+                  >
+                    Both
+                  </button>
                 </div>
               </div>
+            </div>
+          </div>
+        )}
+
+        {/* Bottom Navigation & Controls Row (Only active during SIP Calculator) */}
+        {appMode === 'sip' && (
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-1 border-t border-slate-800/40">
+            {/* View Tabs: SIP Calculator vs Custom Fund List */}
+            <div className="flex items-center gap-2 w-full sm:w-auto">
+              <span className="text-xs font-semibold text-slate-400">View:</span>
+              <div className="flex items-center p-1 bg-slate-900/90 rounded-xl border border-slate-800 w-full sm:w-auto">
+                <button
+                  onClick={() => onSelectSipTab && onSelectSipTab('calculator')}
+                  className={`flex-1 sm:flex-none flex items-center justify-center gap-2 px-4 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                    sipActiveTab === 'calculator'
+                      ? 'bg-gradient-to-r from-emerald-600 to-teal-600 text-white shadow-md'
+                      : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
+                  }`}
+                >
+                  <Calculator className="h-3.5 w-3.5" />
+                  <span>SIP Calculator</span>
+                </button>
+
+                <button
+                  onClick={() => onSelectSipTab && onSelectSipTab('custom')}
+                  className={`flex-1 sm:flex-none flex items-center justify-center gap-2 px-4 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                    sipActiveTab === 'custom'
+                      ? 'bg-gradient-to-r from-emerald-600 to-teal-600 text-white shadow-md'
+                      : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
+                  }`}
+                >
+                  <CheckSquare className="h-3.5 w-3.5" />
+                  <span>Custom Fund List</span>
+                  <span className={`ml-1 px-2 py-0.2 rounded-full text-[10px] font-extrabold ${
+                    sipActiveTab === 'custom' ? 'bg-white/20 text-white' : 'bg-slate-800 text-emerald-400 border border-emerald-500/30'
+                  }`}>
+                    {sipCustomCount}
+                  </span>
+                </button>
+              </div>
+            </div>
+
+            {/* Quick Summary Info */}
+            <div className="flex items-center gap-3 text-xs text-slate-400">
+              <span>Plan: <strong className="text-white capitalize">{selectedPlan}</strong></span>
+              <span>•</span>
+              <span>Valuation Date: <strong className="text-emerald-400 font-mono">{calculationDate || todayStr}</strong></span>
             </div>
           </div>
         )}

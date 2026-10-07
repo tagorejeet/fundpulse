@@ -3,6 +3,8 @@
  */
 
 const amfiService = require('../services/amfiService');
+const nseService = require('../services/nseService');
+const { NSE_INDICES } = require('../config/nseConfig');
 const sipEngine = require('../utils/sipEngine');
 const logger = require('../utils/logger');
 const { MASTER_ALLOWLIST } = require('../config/masterList');
@@ -15,7 +17,7 @@ const calculateSip = async (req, res) => {
   try {
     const {
       ids = [],
-      monthlySip = 10000,
+      monthlySip = 100000,
       calculationDate = null,
       sipDay = 25,
       plan = 'regular'
@@ -23,9 +25,11 @@ const calculateSip = async (req, res) => {
 
     await amfiService.initializeMasterRegistry();
 
-    const numericSip = Math.max(100, Number(monthlySip) || 10000);
-    const numericSipDay = Math.min(28, Math.max(1, parseInt(sipDay, 10) || 25));
+    const numericSip = Math.max(100, Number(monthlySip) || 100000);
+    const numericSipDay = Math.min(31, Math.max(1, parseInt(sipDay, 10) || 25));
+    const isBoth = String(plan).toLowerCase() === 'both';
     const isDirect = String(plan).toLowerCase() === 'direct';
+    const planModes = isBoth ? ['regular', 'direct'] : [isDirect ? 'direct' : 'regular'];
 
     // Parse calculation date or default to amfiService.reportDate
     let resolvedCalcDate = calculationDate;
@@ -41,27 +45,48 @@ const calculateSip = async (req, res) => {
           monthlySip: numericSip,
           calculationDate: resolvedCalcDate,
           sipDay: numericSipDay,
-          plan: isDirect ? 'direct' : 'regular'
+          plan: isBoth ? 'both' : isDirect ? 'direct' : 'regular'
         }
       });
     }
 
-    // Resolve matching schemes with robust fallback
+    // Resolve matching schemes (including official NSE Benchmark Indices)
     const matchedSchemes = ids
       .map(id => {
-        let scheme = amfiService.schemeMap.get(id);
+        const cleanId = String(id).replace(/-reg$/, '').replace(/-dir$/, '');
+        
+        // 1. Check if it's an official NSE benchmark index
+        const nseMatch = NSE_INDICES.find(i => 
+          i.id.toLowerCase() === String(cleanId).toLowerCase() ||
+          i.id.toLowerCase().replace(/[^a-z0-9]/g, '-') === String(cleanId).toLowerCase().replace(/[^a-z0-9]/g, '-') ||
+          i.displayName.toLowerCase() === String(cleanId).toLowerCase() ||
+          i.officialName.toLowerCase() === String(cleanId).toLowerCase()
+        );
+        if (nseMatch) {
+          return {
+            id: nseMatch.id,
+            displayName: nseMatch.displayName,
+            amfiSchemeName: nseMatch.officialName,
+            category: nseMatch.category || 'NSE Benchmark',
+            amcName: 'NSE Indices Limited',
+            isNseIndex: true
+          };
+        }
+
+        // 2. Check AMFI schemes
+        let scheme = amfiService.schemeMap.get(cleanId);
         if (!scheme) {
           scheme = amfiService.masterSchemes.find(s => 
-            s.id === id || 
-            s.id.replace(/-fund-/g, '-') === id.replace(/-fund-/g, '-') ||
-            (s.displayName && s.displayName.toLowerCase().replace(/[^a-z0-9]/g, '') === String(id).toLowerCase().replace(/[^a-z0-9]/g, ''))
+            s.id === cleanId || 
+            s.id.replace(/-fund-/g, '-') === cleanId.replace(/-fund-/g, '-') ||
+            (s.displayName && s.displayName.toLowerCase().replace(/[^a-z0-9]/g, '') === String(cleanId).toLowerCase().replace(/[^a-z0-9]/g, ''))
           );
         }
         if (!scheme) {
           const allowMatch = MASTER_ALLOWLIST.find(a => 
-            a.id === id || 
-            a.id.replace(/-fund-/g, '-') === id.replace(/-fund-/g, '-') ||
-            (a.displayName && a.displayName.toLowerCase().replace(/[^a-z0-9]/g, '') === String(id).toLowerCase().replace(/[^a-z0-9]/g, ''))
+            a.id === cleanId || 
+            a.id.replace(/-fund-/g, '-') === cleanId.replace(/-fund-/g, '-') ||
+            (a.displayName && a.displayName.toLowerCase().replace(/[^a-z0-9]/g, '') === String(cleanId).toLowerCase().replace(/[^a-z0-9]/g, ''))
           );
           if (allowMatch) {
             scheme = {
@@ -79,7 +104,10 @@ const calculateSip = async (req, res) => {
       })
       .filter(Boolean);
 
-    if (matchedSchemes.length === 0) {
+    // Deduplicate matched schemes by scheme.id
+    const uniqueSchemes = Array.from(new Map(matchedSchemes.map(s => [s.id, s])).values());
+
+    if (uniqueSchemes.length === 0) {
       return res.json({
         success: true,
         data: {
@@ -94,71 +122,126 @@ const calculateSip = async (req, res) => {
           monthlySip: numericSip,
           calculationDate: resolvedCalcDate,
           sipDay: numericSipDay,
-          plan: isDirect ? 'direct' : 'regular',
+          plan: isBoth ? 'both' : isDirect ? 'direct' : 'regular',
           reportDate: amfiService.reportDate
         }
       });
     }
 
-    // Compute SIP returns for each scheme
-    const results = await Promise.all(
-      matchedSchemes.map(async (scheme) => {
-        try {
-          const schemeCode = (isDirect ? scheme.directSchemeCode : scheme.regularSchemeCode) || scheme.regularSchemeCode || scheme.directSchemeCode;
-          
-          if (!schemeCode) {
-            return {
+    // Compute SIP returns for each scheme and plan mode
+    const nestedResults = await Promise.all(
+      uniqueSchemes.map(async (scheme) => {
+        // Handle NSE Indices (Benchmark - not split into Regular/Direct)
+        if (scheme.isNseIndex) {
+          try {
+            const nseData = nseService.getHistoricalRecordsForIndex(scheme.id);
+            if (!nseData || !nseData.records || nseData.records.length === 0) {
+              return [{
+                fundId: scheme.id,
+                displayName: `${scheme.displayName} (NSE Index)`,
+                category: scheme.category || 'NSE Benchmark',
+                amcName: scheme.amcName || 'NSE Indices Limited',
+                plan: 'Benchmark',
+                error: 'NSE historical index values temporarily unavailable',
+                returns: { return1Yr: null, return2Yr: null, return3Yr: null, return5Yr: null, return10Yr: null }
+              }];
+            }
+
+            const fundSipResult = sipEngine.calculateFullFundSip({
+              fund: scheme,
+              rawNavList: nseData.records,
+              monthlySipAmount: numericSip,
+              calculationDate: resolvedCalcDate,
+              preferredSipDay: numericSipDay,
+              plan: 'Benchmark'
+            });
+
+            fundSipResult.fundId = scheme.id;
+            fundSipResult.displayName = `${scheme.displayName} (NSE Benchmark)`;
+            fundSipResult.isNseIndex = true;
+            return [fundSipResult];
+          } catch (err) {
+            logger.error(`Error calculating SIP for NSE index ${scheme.id}:`, err);
+            return [{
               fundId: scheme.id,
-              displayName: scheme.displayName,
-              amfiSchemeName: scheme.amfiSchemeName,
-              category: scheme.category,
-              amcName: scheme.amcName,
-              plan: isDirect ? 'Direct' : 'Regular',
-              error: 'Scheme code not available for chosen plan',
+              displayName: `${scheme.displayName} (NSE Benchmark)`,
+              category: scheme.category || 'NSE Benchmark',
+              amcName: scheme.amcName || 'NSE Indices Limited',
+              plan: 'Benchmark',
+              error: err.message,
               returns: { return1Yr: null, return2Yr: null, return3Yr: null, return5Yr: null, return10Yr: null }
-            };
+            }];
           }
-
-          const rawNavList = await amfiService.getNavHistory(schemeCode);
-
-          if (!rawNavList || rawNavList.length === 0) {
-            return {
-              fundId: scheme.id,
-              displayName: scheme.displayName,
-              amfiSchemeName: scheme.amfiSchemeName,
-              category: scheme.category,
-              amcName: scheme.amcName,
-              plan: isDirect ? 'Direct' : 'Regular',
-              error: 'Historical NAV records temporarily unavailable for calculation',
-              returns: { return1Yr: null, return2Yr: null, return3Yr: null, return5Yr: null, return10Yr: null }
-            };
-          }
-
-          const fundSipResult = sipEngine.calculateFullFundSip({
-            fund: scheme,
-            rawNavList,
-            monthlySipAmount: numericSip,
-            calculationDate: resolvedCalcDate,
-            preferredSipDay: numericSipDay,
-            plan: isDirect ? 'Direct' : 'Regular'
-          });
-
-          return fundSipResult;
-        } catch (err) {
-          logger.error(`Error calculating SIP for scheme ${scheme.id}:`, err);
-          return {
-            fundId: scheme.id,
-            displayName: scheme.displayName,
-            amfiSchemeName: scheme.amfiSchemeName,
-            category: scheme.category,
-            amcName: scheme.amcName,
-            plan: isDirect ? 'Direct' : 'Regular',
-            error: err.message,
-            returns: { return1Yr: null, return2Yr: null, return3Yr: null, return5Yr: null, return10Yr: null }
-          };
         }
+
+        return Promise.all(
+          planModes.map(async (pMode) => {
+            const isDir = pMode === 'direct';
+            try {
+              const schemeCode = (isDir ? scheme.directSchemeCode : scheme.regularSchemeCode) || scheme.regularSchemeCode || scheme.directSchemeCode;
+              
+              if (!schemeCode) {
+                return {
+                  fundId: isBoth ? `${scheme.id}-${isDir ? 'dir' : 'reg'}` : scheme.id,
+                  displayName: isBoth ? `${scheme.displayName} (${isDir ? 'Direct' : 'Regular'})` : scheme.displayName,
+                  amfiSchemeName: scheme.amfiSchemeName,
+                  category: scheme.category,
+                  amcName: scheme.amcName,
+                  plan: isDir ? 'Direct' : 'Regular',
+                  error: 'Scheme code not available for chosen plan',
+                  returns: { return1Yr: null, return2Yr: null, return3Yr: null, return5Yr: null, return10Yr: null }
+                };
+              }
+
+              const rawNavList = await amfiService.getNavHistory(schemeCode);
+
+              if (!rawNavList || rawNavList.length === 0) {
+                return {
+                  fundId: isBoth ? `${scheme.id}-${isDir ? 'dir' : 'reg'}` : scheme.id,
+                  displayName: isBoth ? `${scheme.displayName} (${isDir ? 'Direct' : 'Regular'})` : scheme.displayName,
+                  amfiSchemeName: scheme.amfiSchemeName,
+                  category: scheme.category,
+                  amcName: scheme.amcName,
+                  plan: isDir ? 'Direct' : 'Regular',
+                  error: 'Historical NAV records temporarily unavailable for calculation',
+                  returns: { return1Yr: null, return2Yr: null, return3Yr: null, return5Yr: null, return10Yr: null }
+                };
+              }
+
+              const fundSipResult = sipEngine.calculateFullFundSip({
+                fund: scheme,
+                rawNavList,
+                monthlySipAmount: numericSip,
+                calculationDate: resolvedCalcDate,
+                preferredSipDay: numericSipDay,
+                plan: isDir ? 'Direct' : 'Regular'
+              });
+
+              if (isBoth) {
+                fundSipResult.fundId = `${scheme.id}-${isDir ? 'dir' : 'reg'}`;
+                fundSipResult.displayName = `${scheme.displayName} (${isDir ? 'Direct' : 'Regular'})`;
+              }
+
+              return fundSipResult;
+            } catch (err) {
+              logger.error(`Error calculating SIP for scheme ${scheme.id}:`, err);
+              return {
+                fundId: isBoth ? `${scheme.id}-${isDir ? 'dir' : 'reg'}` : scheme.id,
+                displayName: isBoth ? `${scheme.displayName} (${isDir ? 'Direct' : 'Regular'})` : scheme.displayName,
+                amfiSchemeName: scheme.amfiSchemeName,
+                category: scheme.category,
+                amcName: scheme.amcName,
+                plan: isDir ? 'Direct' : 'Regular',
+                error: err.message,
+                returns: { return1Yr: null, return2Yr: null, return3Yr: null, return5Yr: null, return10Yr: null }
+              };
+            }
+          })
+        );
       })
     );
+
+    const results = nestedResults.flat();
 
     res.json({
       success: true,
@@ -168,7 +251,7 @@ const calculateSip = async (req, res) => {
         monthlySip: numericSip,
         calculationDate: resolvedCalcDate,
         sipDay: numericSipDay,
-        plan: isDirect ? 'direct' : 'regular',
+        plan: isBoth ? 'both' : isDirect ? 'direct' : 'regular',
         reportDate: amfiService.reportDate
       }
     });
@@ -190,6 +273,22 @@ const getNavHistoryForFund = async (req, res) => {
   try {
     const { id } = req.params;
     const { plan = 'regular' } = req.query;
+
+    // Check if it's an NSE Index
+    const nseData = nseService.getHistoricalRecordsForIndex(id);
+    if (nseData) {
+      return res.json({
+        success: true,
+        data: {
+          fundId: nseData.index.id,
+          schemeCode: nseData.index.id,
+          plan: 'Benchmark',
+          isNseIndex: true,
+          dataCount: nseData.records.length,
+          navHistory: nseData.records
+        }
+      });
+    }
 
     await amfiService.initializeMasterRegistry();
     const scheme = amfiService.schemeMap.get(id);
