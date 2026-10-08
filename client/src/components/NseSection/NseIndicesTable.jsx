@@ -502,7 +502,7 @@ const NseIndicesTable = ({
                       {/* Index Value / Close */}
                       <td className="p-3.5 text-right font-bold text-white text-sm">
                         {formatValue(idx.currentValue)}
-                        {idx.dayChange !== null && (
+                        {idx.dayChange !== null && idx.dayChange !== undefined && typeof idx.dayChange === 'number' && !isNaN(idx.dayChange) && (
                           <div className={`text-[10px] font-normal ${idx.dayChange >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
                             {idx.dayChange >= 0 ? `+₹${idx.dayChange.toFixed(2)}` : `-₹${Math.abs(idx.dayChange).toFixed(2)}`}
                           </div>
@@ -660,10 +660,10 @@ const NseIndicesTable = ({
                   <div className="p-3.5 rounded-xl bg-brand-500/10 border border-brand-500/20 text-xs text-brand-300">
                     <div className="font-semibold text-brand-200 mb-1 flex items-center gap-1.5">
                       <Info className="w-4 h-4 text-brand-400" />
-                      Day Calculation Annualized Formula Applied:
+                      Day Calculation Formula Applied:
                     </div>
                     <div className="font-mono bg-slate-950/70 p-2 rounded border border-brand-500/20 text-white text-[11px] overflow-x-auto">
-                      Annualized Return = 4 × ((VT / V0)^(365 / (4 × D)) - 1) × 100
+                      &lt; 1 Year (D &lt; 365): Return = ((VT - V0) / V0) × 100 (Absolute) | ≥ 1 Year (D ≥ 365): Annualized = 4 × ((VT / V0)^(365 / (4 × D)) - 1) × 100
                     </div>
                   </div>
 

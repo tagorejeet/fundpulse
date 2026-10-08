@@ -131,11 +131,12 @@ const DayDatePicker = ({
                 Custom Day Calculation Table
               </h3>
               <span className="px-2.5 py-0.5 rounded-full text-[10px] font-extrabold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
-                Quarterly Compounded Annualized Formula
+                SEBI Standard Returns
               </span>
             </div>
             <p className="text-xs text-slate-400 mt-0.5">
-              Formula: <code className="text-brand-300 font-mono font-semibold">Return = 4 × ((V_T / V_0)^(365 / (4 × D)) - 1) × 100</code>
+              <span className="text-slate-300 font-medium">&lt; 1Y (D &lt; 365):</span> <code className="text-brand-300 font-mono font-semibold">((V_T - V_0) / V_0) × 100</code> (Absolute Return) &nbsp;|&nbsp; 
+              <span className="text-slate-300 font-medium"> ≥ 1Y (D ≥ 365):</span> <code className="text-brand-300 font-mono font-semibold">4 × ((V_T / V_0)^(365 / (4 × D)) - 1) × 100</code> (Annualized)
             </p>
           </div>
         </div>

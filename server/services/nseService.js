@@ -239,13 +239,20 @@ function calculateFormulaReturn(V0, VT, T) {
   return Number(result.toFixed(2));
 }
 
-// User-specified Day Calculation formula: Annualized Return = 4 * ((VT / V0)^(365 / (4 * D)) - 1) * 100
+// User-specified Day Calculation formula:
+// For D < 365 (< 1 Year): Simple / Absolute Return = ((VT - V0) / V0) * 100 (SEBI / AMFI Standard)
+// For D >= 365 (>= 1 Year): Quarterly Compounded Annualized Return = 4 * ((VT / V0)^(365 / (4 * D)) - 1) * 100
 function calculateDayFormulaReturn(V0, VT, D) {
   if (!V0 || !VT || V0 <= 0 || VT <= 0 || !D || D <= 0) return null;
-  const ratio = VT / V0;
-  const exponent = 365 / (4 * D);
-  const val = 4 * (Math.pow(ratio, exponent) - 1);
-  const result = val * 100;
+  let result;
+  if (D < 365) {
+    result = ((VT - V0) / V0) * 100;
+  } else {
+    const ratio = VT / V0;
+    const exponent = 365 / (4 * D);
+    const val = 4 * (Math.pow(ratio, exponent) - 1);
+    result = val * 100;
+  }
   if (isNaN(result) || !isFinite(result)) return null;
   return Number(result.toFixed(2));
 }
@@ -430,15 +437,15 @@ async function getNSEIndexData({ asOfDate = null, forceRefresh = false, days = n
         returns[`return${D}d`] = dayReturn;
         returns[`return_${D}d`] = dayReturn;
         returns[`dayReturn${D}d`] = dayReturn;
-        auditDetails[`${D}D`] = {
-          D,
-          targetDate: formatDateStandard(targetDayDate),
-          actualDate: dayRecord.dateStr,
-          V0,
-          VT,
-          formula: `4 * ((${VT} / ${V0})^(365 / (4 * ${D})) - 1)`,
-          returnPct: dayReturn
-        };
+          auditDetails[`${D}D`] = {
+            D,
+            targetDate: formatDateStandard(targetDayDate),
+            actualDate: dayRecord.dateStr,
+            V0,
+            VT,
+            formula: D < 365 ? `((${VT} - ${V0}) / ${V0}) * 100` : `4 * ((${VT} / ${V0})^(365 / (4 * ${D})) - 1) * 100`,
+            returnPct: dayReturn
+          };
       } else {
         dayReturns[D] = null;
         dayReturns[`${D}`] = null;

@@ -178,7 +178,7 @@ export const SipDetailModal = ({
                     <Layers className="h-3.5 w-3.5 text-indigo-400" /> Total Units
                   </p>
                   <p className="text-base font-bold text-white mt-1 font-mono">
-                    {activePeriodData.totalUnits.toFixed(4)}
+                    {activePeriodData.totalUnits != null ? Number(activePeriodData.totalUnits).toFixed(4) : '0.0000'}
                   </p>
                   <p className="text-[10px] text-slate-500 mt-0.5">Accumulated</p>
                 </div>
@@ -188,7 +188,7 @@ export const SipDetailModal = ({
                     <Calendar className="h-3.5 w-3.5 text-amber-400" /> Latest NAV
                   </p>
                   <p className="text-base font-bold text-white mt-1 font-mono">
-                    ₹{Number(activePeriodData.currentNav).toFixed(2)}
+                    ₹{activePeriodData.currentNav != null ? Number(activePeriodData.currentNav).toFixed(2) : '-'}
                   </p>
                   <p className="text-[10px] text-slate-500 mt-0.5">{activePeriodData.valuationDate}</p>
                 </div>
@@ -336,10 +336,10 @@ export const SipDetailModal = ({
                         <td className="p-3 pl-4 text-brand-400 font-sans">VALUATION</td>
                         <td className="p-3 font-sans text-white">{activePeriodData.valuationDate}</td>
                         <td className="p-3 font-sans text-slate-400">Calculation Date</td>
-                        <td className="p-3 text-emerald-400 font-semibold">₹{Number(activePeriodData.currentNav).toFixed(4)}</td>
+                        <td className="p-3 text-emerald-400 font-semibold">₹{activePeriodData.currentNav != null ? Number(activePeriodData.currentNav).toFixed(4) : '-'}</td>
                         <td className="p-3 text-slate-400">Final Portfolio</td>
                         <td className="p-3 text-slate-500">-</td>
-                        <td className="p-3 text-brand-400">{activePeriodData.totalUnits.toFixed(4)}</td>
+                        <td className="p-3 text-brand-400">{activePeriodData.totalUnits != null ? Number(activePeriodData.totalUnits).toFixed(4) : '0.0000'}</td>
                         <td className="p-3 text-white">₹{activePeriodData.totalInvested.toLocaleString('en-IN')}</td>
                         <td className="p-3 pr-4 text-right text-emerald-400 text-sm">
                           ₹{Math.round(activePeriodData.finalPortfolioValue).toLocaleString('en-IN')}
