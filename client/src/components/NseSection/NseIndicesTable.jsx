@@ -98,18 +98,40 @@ const NseIndicesTable = ({
     setAuditTab(mode === 'days' ? 'days' : 'yearly');
   };
 
-  // Filter indices based on search query
+  const [activeCategory, setActiveCategory] = useState('all');
+
+  const categoryCounts = useMemo(() => {
+    const counts = { all: indices.length, 'Broad Market': 0, 'Sectoral': 0, 'Thematic': 0 };
+    indices.forEach(idx => {
+      if (idx.category === 'Broad Market') counts['Broad Market']++;
+      else if (idx.category === 'Sectoral') counts['Sectoral']++;
+      else counts['Thematic']++;
+    });
+    return counts;
+  }, [indices]);
+
+  // Filter indices based on category and search query
   const filteredIndices = useMemo(() => {
     if (!indices || indices.length === 0) return [];
-    if (!searchQuery.trim()) return indices;
-    const q = searchQuery.toLowerCase().trim();
-    return indices.filter(idx => 
-      idx.displayName.toLowerCase().includes(q) ||
-      idx.id.toLowerCase().includes(q) ||
-      idx.officialName.toLowerCase().includes(q) ||
-      (idx.category && idx.category.toLowerCase().includes(q))
-    );
-  }, [indices, searchQuery]);
+    return indices.filter(idx => {
+      if (activeCategory !== 'all') {
+        if (activeCategory === 'Thematic') {
+          if (idx.category !== 'Thematic' && idx.category !== 'Strategy') return false;
+        } else if (idx.category !== activeCategory) {
+          return false;
+        }
+      }
+      if (!searchQuery.trim()) return true;
+      const q = searchQuery.toLowerCase().trim();
+      return (
+        idx.displayName.toLowerCase().includes(q) ||
+        idx.id.toLowerCase().includes(q) ||
+        idx.officialName.toLowerCase().includes(q) ||
+        (idx.category && idx.category.toLowerCase().includes(q)) ||
+        (idx.subCategory && idx.subCategory.toLowerCase().includes(q))
+      );
+    });
+  }, [indices, activeCategory, searchQuery]);
 
   const allSelected = useMemo(() => {
     if (!filteredIndices || filteredIndices.length === 0) return false;
@@ -279,6 +301,71 @@ const NseIndicesTable = ({
         </div>
       </div>
 
+      {/* Category Filter Pills Bar */}
+      <div className="flex flex-wrap items-center justify-between gap-3 p-2.5 rounded-xl bg-slate-900/70 border border-slate-800 shadow-sm">
+        <div className="flex flex-wrap items-center gap-1.5">
+          <button
+            onClick={() => setActiveCategory('all')}
+            className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all flex items-center gap-1.5 ${
+              activeCategory === 'all'
+                ? 'bg-gradient-to-r from-brand-600 to-indigo-600 text-white shadow-md'
+                : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
+            }`}
+          >
+            <span>All Benchmarks</span>
+            <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-slate-800/90 text-brand-300 font-mono">
+              {categoryCounts.all}
+            </span>
+          </button>
+
+          <button
+            onClick={() => setActiveCategory('Broad Market')}
+            className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all flex items-center gap-1.5 ${
+              activeCategory === 'Broad Market'
+                ? 'bg-brand-600 text-white shadow-md'
+                : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
+            }`}
+          >
+            <span>Broad Market</span>
+            <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-slate-800/90 text-brand-300 font-mono">
+              {categoryCounts['Broad Market']}
+            </span>
+          </button>
+
+          <button
+            onClick={() => setActiveCategory('Sectoral')}
+            className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all flex items-center gap-1.5 ${
+              activeCategory === 'Sectoral'
+                ? 'bg-emerald-600 text-white shadow-md'
+                : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
+            }`}
+          >
+            <span>Sectoral</span>
+            <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-slate-800/90 text-emerald-300 font-mono">
+              {categoryCounts['Sectoral']}
+            </span>
+          </button>
+
+          <button
+            onClick={() => setActiveCategory('Thematic')}
+            className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all flex items-center gap-1.5 ${
+              activeCategory === 'Thematic'
+                ? 'bg-amber-600 text-white shadow-md'
+                : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
+            }`}
+          >
+            <span>Thematic & Strategy</span>
+            <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-slate-800/90 text-amber-300 font-mono">
+              {categoryCounts['Thematic']}
+            </span>
+          </button>
+        </div>
+
+        <div className="text-xs text-slate-400 px-2 font-medium">
+          Showing <strong className="text-white">{filteredIndices.length}</strong> of <strong className="text-white">{indices.length}</strong> indices
+        </div>
+      </div>
+
       {/* Main NSE Table */}
       <div className="glass-card rounded-2xl border border-slate-800 shadow-xl overflow-hidden">
         <div className="overflow-x-auto">
@@ -369,10 +456,12 @@ const NseIndicesTable = ({
                                 </span>
                               )}
                             </div>
-                            <div className="text-[11px] text-slate-400 mt-0.5 flex items-center gap-1.5">
+                            <div className="text-[11px] text-slate-400 mt-0.5 flex items-center gap-1.5 flex-wrap">
                               <span className="text-brand-300 font-mono font-medium">Official: {idx.officialName}</span>
                               <span>•</span>
-                              <span className="text-slate-500">{idx.category}</span>
+                              <span className="px-1.5 py-0.2 rounded text-[10px] bg-slate-800 text-slate-300 border border-slate-700/60 font-semibold">
+                                {idx.category}{idx.subCategory ? ` • ${idx.subCategory}` : ''}
+                              </span>
                             </div>
                           </div>
                         </div>

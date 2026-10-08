@@ -182,30 +182,41 @@ async function fetchOfficialNseIndexHistory(indexName, fromStr, toStr) {
   });
 }
 
-// Prime / Refresh all 4 indices
+// Prime / Refresh all official NSE indices (Broad, Sectoral, Thematic)
 async function refreshAllNseIndices(force = false) {
   const now = Date.now();
   if (!force && memoryCache.lastUpdated && (now - new Date(memoryCache.lastUpdated).getTime() < CACHE_TTL_MS)) {
-    return memoryCache;
+    const allPresent = NSE_INDICES.every(item => memoryCache.data[item.id] && memoryCache.data[item.id].length > 0);
+    if (allPresent) {
+      return memoryCache;
+    }
   }
 
-  logger.info('Refreshing official NSE indices data from niftyindices.com...');
+  logger.info(`Refreshing ${NSE_INDICES.length} official NSE indices data from niftyindices.com...`);
   const fromDate = '01-Jan-2014';
   const today = new Date();
   const toDate = formatToNseApiDate(today);
 
-  const errors = [];
-  for (const item of NSE_INDICES) {
-    try {
-      const records = await fetchOfficialNseIndexHistory(item.id, fromDate, toDate);
-      if (records && records.length > 0) {
-        memoryCache.data[item.id] = records;
-        logger.info(`Fetched official ${item.id} records: ${records.length} days`);
+  // Fetch in concurrent batches of 6 for speed and reliability
+  const chunkSize = 6;
+  for (let i = 0; i < NSE_INDICES.length; i += chunkSize) {
+    const chunk = NSE_INDICES.slice(i, i + chunkSize);
+    await Promise.all(chunk.map(async (item) => {
+      if (!force && memoryCache.data[item.id] && memoryCache.data[item.id].length > 0) {
+        return;
       }
-    } catch (err) {
-      logger.error(`Error fetching official data for ${item.id}:`, err.message);
-      errors.push({ id: item.id, error: err.message });
-    }
+      try {
+        const queryName = item.apiName || item.officialName || item.id;
+        const records = await fetchOfficialNseIndexHistory(queryName, fromDate, toDate);
+        if (records && records.length > 0) {
+          memoryCache.data[item.id] = records;
+          logger.info(`Fetched official ${item.id} records: ${records.length} days`);
+        }
+      } catch (err) {
+        logger.error(`Error fetching official data for ${item.id}:`, err.message);
+      }
+    }));
+    saveDiskCache();
   }
 
   if (Object.keys(memoryCache.data).length > 0) {

@@ -161,6 +161,7 @@ export const SipCalculator = ({
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [apiSearchResults, setApiSearchResults] = useState([]);
   const [isSearchingApi, setIsSearchingApi] = useState(false);
+  const [showAllBenchmarks, setShowAllBenchmarks] = useState(false);
 
   // Calculation Results State
   const [results, setResults] = useState([]);
@@ -779,7 +780,7 @@ export const SipCalculator = ({
 
             <div className="flex items-center gap-2 flex-wrap">
               <span className="text-[11px] text-amber-500/80 font-semibold">NSE Benchmarks:</span>
-              {NSE_INDICES.map(idx => {
+              {(showAllBenchmarks ? NSE_INDICES : NSE_INDICES.slice(0, 8)).map(idx => {
                 const isSelected = selectedFundIds.includes(idx.id);
                 return (
                   <button
@@ -803,6 +804,14 @@ export const SipCalculator = ({
                   </button>
                 );
               })}
+              {NSE_INDICES.length > 8 && (
+                <button
+                  onClick={() => setShowAllBenchmarks(!showAllBenchmarks)}
+                  className="px-2.5 py-1 rounded-lg text-[11px] font-bold text-amber-400 bg-slate-900 border border-amber-500/30 hover:bg-amber-500/20 transition-all shadow-sm"
+                >
+                  {showAllBenchmarks ? 'Show Less' : `+${NSE_INDICES.length - 8} More Benchmarks`}
+                </button>
+              )}
             </div>
           </div>
         </div>
