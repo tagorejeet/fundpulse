@@ -266,8 +266,8 @@ export function buildSuggestionSheetWorksheet(workbook, {
 
         if (isDaysMode) {
           const returnVals = customDaysList.flatMap(d => [
-            parsePct(fund[`regReturn${d}d`] ?? fund[`return${d}d`]),
-            parsePct(fund[`dirReturn${d}d`])
+            parsePct(fund.regDayReturns?.[d] ?? fund[`reg_return_${d}d`] ?? fund[`regReturn${d}d`] ?? fund.dayReturns?.[d] ?? fund[`return_${d}d`] ?? fund[`return${d}d`]),
+            parsePct(fund.dirDayReturns?.[d] ?? fund[`dir_return_${d}d`] ?? fund[`dirReturn${d}d`])
           ]);
           returnVals.forEach((ret, rIdx) => {
             const colIdx = 6 + rIdx;
@@ -338,7 +338,7 @@ export function buildSuggestionSheetWorksheet(workbook, {
           navCell.alignment = { horizontal: 'center', vertical: 'middle' };
           navCell.border = { top: BORDER_THIN, bottom: BORDER_THIN, left: BORDER_THIN, right: BORDER_THIN };
 
-          returnVals = customDaysList.map(d => parsePct(fund[`return${d}d`]));
+          returnVals = customDaysList.map(d => parsePct(fund.dayReturns?.[d] ?? fund[`return_${d}d`] ?? fund[`return${d}d`]));
           startRetCol = 5;
         } else {
           returnVals = [
@@ -463,8 +463,8 @@ export function buildSuggestionSheetWorksheet(workbook, {
 
         if (isDaysMode) {
           retCols = customDaysList.flatMap(d => [
-            parsePct(idx.dayReturns?.[d] ?? idx[`return${d}d`]),
-            parsePct(idx.dayReturns?.[d] ?? idx[`return${d}d`])
+            parsePct(idx.dayReturns?.[d] ?? idx[`return_${d}d`] ?? idx[`return${d}d`]),
+            parsePct(idx.dayReturns?.[d] ?? idx[`return_${d}d`] ?? idx[`return${d}d`])
           ]);
         } else {
           const r1 = parsePct(idx.return1Yr);
@@ -489,7 +489,7 @@ export function buildSuggestionSheetWorksheet(workbook, {
           navCell.alignment = { horizontal: 'center', vertical: 'middle' };
           navCell.border = { top: BORDER_THIN, bottom: BORDER_THIN, left: BORDER_THIN, right: BORDER_THIN };
 
-          retCols = customDaysList.map(d => parsePct(idx.dayReturns?.[d] ?? idx[`return${d}d`]));
+          retCols = customDaysList.map(d => parsePct(idx.dayReturns?.[d] ?? idx[`return_${d}d`] ?? idx[`return${d}d`]));
           startCol = 5;
         } else {
           retCols = [
@@ -641,7 +641,7 @@ export function buildNseWorksheet(workbook, indices = [], calculationDate = null
 
     const val = Number(idx.currentValue);
     const returnVals = isDaysMode
-      ? daysListToUse.map(d => parsePct(idx.dayReturns?.[d] ?? idx[`return${d}d`]))
+      ? daysListToUse.map(d => parsePct(idx.dayReturns?.[d] ?? idx[`return_${d}d`] ?? idx[`return${d}d`]))
       : [
           parsePct(idx.return1Yr),
           parsePct(idx.return2Yr),

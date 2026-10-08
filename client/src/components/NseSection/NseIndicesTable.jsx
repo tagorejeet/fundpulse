@@ -133,7 +133,12 @@ const NseIndicesTable = ({
     });
   }, [indices, activeCategory, searchQuery]);
 
-  const allSelected = useMemo(() => {
+  const allIndicesSelected = useMemo(() => {
+    if (!indices || indices.length === 0) return false;
+    return indices.every(idx => selectedNseIndexIds.has(idx.id));
+  }, [indices, selectedNseIndexIds]);
+
+  const allFilteredSelected = useMemo(() => {
     if (!filteredIndices || filteredIndices.length === 0) return false;
     return filteredIndices.every(idx => selectedNseIndexIds.has(idx.id));
   }, [filteredIndices, selectedNseIndexIds]);
@@ -274,7 +279,34 @@ const NseIndicesTable = ({
         </div>
 
         {/* Action Controls */}
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3">
+          {/* Master Select / Deselect All NSE Benchmarks Button */}
+          <button
+            type="button"
+            onClick={() => onToggleSelectAll && onToggleSelectAll(null, !allIndicesSelected)}
+            className={`flex items-center gap-2 px-3 py-1.5 text-xs font-semibold rounded-lg border transition-all shadow-sm ${
+              allIndicesSelected
+                ? 'bg-brand-600/25 text-brand-300 border-brand-500/50 hover:bg-brand-600/35'
+                : selectedNseIndexIds.size > 0
+                ? 'bg-slate-800 text-slate-200 border-slate-700 hover:bg-slate-700'
+                : 'bg-slate-900/90 text-slate-400 border-slate-800 hover:bg-slate-800 hover:text-white'
+            }`}
+            title={allIndicesSelected ? "Deselect all NSE indices" : "Select all NSE indices"}
+          >
+            <input
+              type="checkbox"
+              checked={allIndicesSelected}
+              onChange={() => onToggleSelectAll && onToggleSelectAll(null, !allIndicesSelected)}
+              className="w-3.5 h-3.5 rounded border-slate-700 bg-slate-800 text-brand-600 focus:ring-brand-500 cursor-pointer accent-brand-500"
+              onClick={(e) => e.stopPropagation()}
+            />
+            <span>
+              {allIndicesSelected 
+                ? `Select All (${indices.length})` 
+                : `Select All (${selectedNseIndexIds.size}/${indices.length})`}
+            </span>
+          </button>
+
           {/* Search Box */}
           <div className="relative">
             <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
@@ -283,7 +315,7 @@ const NseIndicesTable = ({
               placeholder="Search NSE indices..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-8 pr-3 py-1.5 text-xs bg-slate-950/80 border border-slate-800 rounded-lg text-white placeholder-slate-500 focus:outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500 transition-all w-48 sm:w-56"
+              className="pl-8 pr-3 py-1.5 text-xs bg-slate-950/80 border border-slate-800 rounded-lg text-white placeholder-slate-500 focus:outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500 transition-all w-44 sm:w-52"
             />
           </div>
 
@@ -376,9 +408,9 @@ const NseIndicesTable = ({
                 <th className="p-3.5 w-12 text-center">
                   <input
                     type="checkbox"
-                    checked={allSelected}
-                    onChange={() => onToggleSelectAll && onToggleSelectAll(filteredIndices)}
-                    title="Select/Deselect all NSE indices"
+                    checked={allIndicesSelected}
+                    onChange={() => onToggleSelectAll && onToggleSelectAll(null, !allIndicesSelected)}
+                    title={allIndicesSelected ? "Deselect all NSE indices" : "Select all NSE indices"}
                     className="w-4 h-4 rounded border-slate-700 bg-slate-800 text-brand-600 focus:ring-brand-500 cursor-pointer accent-brand-500"
                   />
                 </th>
@@ -481,7 +513,7 @@ const NseIndicesTable = ({
                       {mode === 'days' ? (
                         daysListToUse.map(d => (
                           <td key={d} className="p-3.5 text-right">
-                            {formatPct(idx.dayReturns?.[d] ?? idx[`return${d}d`])}
+                            {formatPct(idx.dayReturns?.[d] ?? idx[`return_${d}d`] ?? idx[`return${d}d`])}
                           </td>
                         ))
                       ) : (

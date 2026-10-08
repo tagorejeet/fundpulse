@@ -16,6 +16,14 @@ import { AlertTriangle, RefreshCw, CheckCircle2 } from 'lucide-react';
 const LOCAL_STORAGE_KEY = 'fundpulse_custom_fund_ids';
 const LOCAL_STORAGE_SUGGESTION_KEY = 'fundpulse_suggestion_funds';
 const LOCAL_STORAGE_NSE_KEY = 'fundpulse_selected_nse_indices';
+const LOCAL_STORAGE_CUSTOM_DAYS_LIST = 'fundpulse_custom_days_list';
+const LOCAL_STORAGE_CUSTOM_DAYS = 'fundpulse_custom_days';
+const LOCAL_STORAGE_ACTIVE_TAB = 'fundpulse_active_tab';
+const LOCAL_STORAGE_MODE = 'fundpulse_mode';
+const LOCAL_STORAGE_PLAN = 'fundpulse_selected_plan';
+const LOCAL_STORAGE_CALC_DATE = 'fundpulse_calc_date';
+const LOCAL_STORAGE_START_DATE = 'fundpulse_start_date';
+const LOCAL_STORAGE_END_DATE = 'fundpulse_end_date';
 
 const DEFAULT_SUGGESTION_IDS = [
   'nippon-india-large-cap-growth',
@@ -59,15 +67,38 @@ export function App() {
   const [appMode, setAppMode] = useState('analysis');
 
   // Navigation & View State (for Fund Analysis mode)
-  const [activeTab, setActiveTab] = useState('all'); // 'all' | 'custom' | 'suggestion'
+  const [activeTab, setActiveTab] = useState(() => {
+    try {
+      const saved = localStorage.getItem(LOCAL_STORAGE_ACTIVE_TAB);
+      if (saved && ['all', 'custom', 'suggestion'].includes(saved)) return saved;
+    } catch (e) {}
+    return 'all';
+  });
+
   const [sipActiveTab, setSipActiveTab] = useState('calculator'); // 'calculator' | 'custom'
-  const [mode, setMode] = useState('yearly'); // 'yearly' | 'days'
-  const [selectedPlan, setSelectedPlan] = useState('regular'); // 'regular' | 'direct'
+
+  const [mode, setMode] = useState(() => {
+    try {
+      const saved = localStorage.getItem(LOCAL_STORAGE_MODE);
+      if (saved && ['yearly', 'days'].includes(saved)) return saved;
+    } catch (e) {}
+    return 'yearly';
+  });
+
+  const [selectedPlan, setSelectedPlan] = useState(() => {
+    try {
+      const saved = localStorage.getItem(LOCAL_STORAGE_PLAN);
+      if (saved && ['regular', 'direct', 'both'].includes(saved)) return saved;
+    } catch (e) {}
+    return 'regular';
+  });
+
   const [activeCategory, setActiveCategory] = useState('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [debouncedSearchQuery, setDebouncedSearchQuery] = useState('');
   const [page, setPage] = useState(1);
   const activeRequestIdRef = useRef(0);
+  const abortControllerRef = useRef(null);
 
   // Debounce search query to eliminate network race conditions and input lag
   useEffect(() => {
@@ -87,7 +118,7 @@ export function App() {
     setPage(1);
   }, [debouncedSearchQuery]);
 
-  // Custom Day Period State (defaults to 33 days as requested by user)
+  // Custom Day Period State (persisted to localStorage)
   const todayStr = useMemo(() => new Date().toISOString().split('T')[0], []);
   const getDefaultStartDate = useCallback((days) => {
     const d = new Date();
@@ -95,15 +126,87 @@ export function App() {
     return d.toISOString().split('T')[0];
   }, []);
 
-  const [customDaysList, setCustomDaysList] = useState([33, 50, 67]);
-  const [customDays, setCustomDays] = useState(33);
-  const [calculationDate, setCalculationDate] = useState(() => new Date().toISOString().split('T')[0]);
+  const [customDaysList, setCustomDaysList] = useState(() => {
+    try {
+      const saved = localStorage.getItem(LOCAL_STORAGE_CUSTOM_DAYS_LIST);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+    } catch (e) {}
+    return [33, 50, 67];
+  });
+
+  const [customDays, setCustomDays] = useState(() => {
+    try {
+      const saved = localStorage.getItem(LOCAL_STORAGE_CUSTOM_DAYS);
+      if (saved) {
+        const num = parseInt(saved, 10);
+        if (!isNaN(num) && num > 0) return num;
+      }
+    } catch (e) {}
+    return 33;
+  });
+
+  const [calculationDate, setCalculationDate] = useState(() => {
+    try {
+      const saved = localStorage.getItem(LOCAL_STORAGE_CALC_DATE);
+      if (saved && /^\d{4}-\d{2}-\d{2}$/.test(saved)) return saved;
+    } catch (e) {}
+    return new Date().toISOString().split('T')[0];
+  });
+
   const [startDate, setStartDate] = useState(() => {
+    try {
+      const saved = localStorage.getItem(LOCAL_STORAGE_START_DATE);
+      if (saved && /^\d{4}-\d{2}-\d{2}$/.test(saved)) return saved;
+    } catch (e) {}
     const d = new Date();
     d.setDate(d.getDate() - 33);
     return d.toISOString().split('T')[0];
   });
-  const [endDate, setEndDate] = useState(() => new Date().toISOString().split('T')[0]);
+
+  const [endDate, setEndDate] = useState(() => {
+    try {
+      const saved = localStorage.getItem(LOCAL_STORAGE_END_DATE);
+      if (saved && /^\d{4}-\d{2}-\d{2}$/.test(saved)) return saved;
+    } catch (e) {}
+    return new Date().toISOString().split('T')[0];
+  });
+
+  // Persist view state and custom configuration to localStorage
+  useEffect(() => {
+    try {
+      localStorage.setItem(LOCAL_STORAGE_ACTIVE_TAB, activeTab);
+    } catch (e) {}
+  }, [activeTab]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(LOCAL_STORAGE_MODE, mode);
+    } catch (e) {}
+  }, [mode]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(LOCAL_STORAGE_PLAN, selectedPlan);
+    } catch (e) {}
+  }, [selectedPlan]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(LOCAL_STORAGE_CUSTOM_DAYS_LIST, JSON.stringify(customDaysList));
+      localStorage.setItem(LOCAL_STORAGE_CUSTOM_DAYS, String(customDays));
+    } catch (e) {}
+  }, [customDaysList, customDays]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(LOCAL_STORAGE_CALC_DATE, calculationDate);
+      localStorage.setItem(LOCAL_STORAGE_START_DATE, startDate);
+      localStorage.setItem(LOCAL_STORAGE_END_DATE, endDate);
+    } catch (e) {}
+  }, [calculationDate, startDate, endDate]);
 
   // Data State
   const [funds, setFunds] = useState([]);
@@ -255,15 +358,22 @@ export function App() {
     });
   };
 
-  const handleToggleSelectAllNse = (filteredIndices) => {
-    if (!filteredIndices || filteredIndices.length === 0) return;
-    const allSelected = filteredIndices.every(i => selectedNseIndexIds.has(i.id));
+  const handleToggleSelectAllNse = (indicesToToggle = null, forceState = null) => {
     setSelectedNseIndexIds(prev => {
+      const targetList = (Array.isArray(indicesToToggle) && indicesToToggle.length > 0)
+        ? indicesToToggle
+        : nseIndices;
+      if (!targetList || targetList.length === 0) return prev;
+
+      const shouldSelect = typeof forceState === 'boolean'
+        ? forceState
+        : !targetList.every(i => prev.has(i.id));
+
       const next = new Set(prev);
-      if (allSelected) {
-        filteredIndices.forEach(i => next.delete(i.id));
+      if (shouldSelect) {
+        targetList.forEach(i => next.add(i.id));
       } else {
-        filteredIndices.forEach(i => next.add(i.id));
+        targetList.forEach(i => next.delete(i.id));
       }
       return next;
     });
@@ -282,7 +392,7 @@ export function App() {
     exportNseListToExcel(toExport, calculationDate);
   };
 
-  // Load Main Paginated Schemes
+  // Load Main Paginated Schemes (optimized with AbortController for instant search response)
   const loadFunds = useCallback(async (
     cat = activeCategory,
     query = debouncedSearchQuery,
@@ -295,21 +405,29 @@ export function App() {
     opt = selectedOption
   ) => {
     const requestId = ++activeRequestIdRef.current;
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
+
     setIsLoading(true);
     setError(null);
     try {
       const formattedDays = Array.isArray(daysList) ? daysList.join(',') : String(daysList);
+      const isSearchActive = Boolean(query && query.trim());
       const res = await fetchFunds({
         category: cat,
         search: query,
         plan,
         option: opt,
         page: p,
-        limit: 50,
+        limit: isSearchActive ? 30 : 50,
         days: formattedDays,
         startDate: sDate,
         endDate: eDate,
-        asOfDate: calcDate
+        asOfDate: calcDate,
+        signal: controller.signal
       });
 
       // Ignore response if a newer search/pagination request was triggered
@@ -326,6 +444,7 @@ export function App() {
         isCached: res.data.isCached
       });
     } catch (err) {
+      if (err.name === 'AbortError') return;
       if (requestId === activeRequestIdRef.current) {
         setError(err.message || 'AMFI data is temporarily unavailable.');
       }
@@ -407,13 +526,23 @@ export function App() {
     loadFunds(activeCategory, debouncedSearchQuery, selectedPlan, page, customDaysList, startDate, endDate, calculationDate, selectedOption);
   }, [activeCategory, debouncedSearchQuery, selectedPlan, selectedOption, page, customDaysList, startDate, endDate, calculationDate, loadFunds]);
 
+  // Always keep custom funds loaded whenever selectedFundIds changes or on mount
   useEffect(() => {
-    if (activeTab === 'custom') {
+    if (selectedFundIds && selectedFundIds.size > 0) {
       loadCustomFunds(selectedFundIds, selectedPlan, customDaysList, startDate, endDate, calculationDate);
-    } else if (activeTab === 'suggestion') {
-      loadSuggestionFunds(suggestionFundIds, selectedPlan, customDaysList, startDate, endDate, calculationDate);
+    } else {
+      setCustomFunds([]);
     }
-  }, [activeTab, selectedFundIds, suggestionFundIds, selectedPlan, customDaysList, startDate, endDate, calculationDate, loadCustomFunds, loadSuggestionFunds]);
+  }, [selectedFundIds, selectedPlan, customDaysList, startDate, endDate, calculationDate, loadCustomFunds]);
+
+  // Always keep suggestion sheet funds loaded
+  useEffect(() => {
+    if (suggestionFundIds && suggestionFundIds.size > 0) {
+      loadSuggestionFunds(suggestionFundIds, selectedPlan, customDaysList, startDate, endDate, calculationDate);
+    } else {
+      setSuggestionFunds([]);
+    }
+  }, [suggestionFundIds, selectedPlan, customDaysList, startDate, endDate, calculationDate, loadSuggestionFunds]);
 
   const handleApplyCustomDays = ({ customDaysList: newDaysList, startDate: newStart, endDate: newEnd }) => {
     const validList = (newDaysList && newDaysList.length > 0) ? newDaysList : [33, 50, 67];

@@ -4,7 +4,7 @@
 
 const API_BASE = '/api';
 
-export const fetchFunds = async ({ category = 'all', search = '', plan = 'regular', option = 'all', page = 1, limit = 50, days, customDays = '33,50,67', startDate, endDate, asOfDate, calculationDate } = {}) => {
+export const fetchFunds = async ({ category = 'all', search = '', plan = 'regular', option = 'all', page = 1, limit = 50, days, customDays = '33,50,67', startDate, endDate, asOfDate, calculationDate, signal } = {}) => {
   const params = new URLSearchParams();
   if (category && category !== 'all') params.append('category', category);
   if (search && search.trim()) params.append('search', search.trim());
@@ -27,7 +27,7 @@ export const fetchFunds = async ({ category = 'all', search = '', plan = 'regula
     params.append('calculationDate', dateVal);
   }
 
-  const response = await fetch(`${API_BASE}/funds?${params.toString()}`);
+  const response = await fetch(`${API_BASE}/funds?${params.toString()}`, { signal });
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({}));
     throw new Error(errorData.error || 'AMFI data is temporarily unavailable.');
@@ -35,7 +35,7 @@ export const fetchFunds = async ({ category = 'all', search = '', plan = 'regula
   return response.json();
 };
 
-export const fetchBatchFunds = async ({ ids = [], plan = 'regular', days, customDays = '33,50,67', startDate, endDate, asOfDate, calculationDate } = {}) => {
+export const fetchBatchFunds = async ({ ids = [], plan = 'regular', days, customDays = '33,50,67', startDate, endDate, asOfDate, calculationDate, signal } = {}) => {
   if (!ids || ids.length === 0) {
     return { success: true, data: { funds: [], total: 0 } };
   }
@@ -49,6 +49,7 @@ export const fetchBatchFunds = async ({ ids = [], plan = 'regular', days, custom
     headers: {
       'Content-Type': 'application/json'
     },
+    signal,
     body: JSON.stringify({
       ids,
       plan,

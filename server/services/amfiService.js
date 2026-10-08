@@ -12,11 +12,38 @@
  * 6. Batch resolution for user's Custom Fund List
  */
 
+const fs = require('fs');
+const path = require('path');
 const logger = require('../utils/logger');
 const { MASTER_ALLOWLIST, MASTER_CATEGORIES, CATEGORY_DISPLAY_ORDER } = require('../config/masterList');
 const { fuzzyFilterSchemes } = require('../utils/fuzzySearch');
 
-const AMFI_CACHE_TTL = parseInt(process.env.AMFI_CACHE_TTL || '3600', 10); // seconds
+const CACHE_DIR = path.join(__dirname, '../cache');
+const NAV_CACHE_FILE = path.join(CACHE_DIR, 'nav_history_cache.json');
+const AUM_CACHE_FILE = path.join(CACHE_DIR, 'amfi_aum_cache.json');
+const AMFI_CACHE_TTL = parseInt(process.env.AMFI_CACHE_TTL || '86400', 10); // 24 hours
+
+// Helper for bounded-concurrency async mapping
+async function pMap(items, mapper, concurrency = 12) {
+  if (!items || items.length === 0) return [];
+  const results = new Array(items.length);
+  let currentIndex = 0;
+
+  async function worker() {
+    while (currentIndex < items.length) {
+      const idx = currentIndex++;
+      results[idx] = await mapper(items[idx], idx);
+    }
+  }
+
+  const workers = [];
+  const workerCount = Math.min(concurrency, items.length);
+  for (let i = 0; i < workerCount; i++) {
+    workers.push(worker());
+  }
+  await Promise.all(workers);
+  return results;
+}
 
 // Parse DD-MM-YYYY or DD-MMM-YYYY or ISO (YYYY-MM-DD) date strings to Date object
 function parseNavDate(dateStr) {
@@ -60,6 +87,10 @@ function formatAmfiDate(dateObj) {
 function cleanSchemeName(name) {
   return (name || '')
     .toLowerCase()
+    .replace(/\(.*?\)/g, ' ')
+    .replace(/\s*-\s*institutional\s*/g, ' ')
+    .replace(/\s*-\s*retail\s*/g, ' ')
+    .replace(/\s*-\s*super\s*institutional\s*/g, ' ')
     .replace(/\s*-\s*direct\s*plan\s*/g, ' ')
     .replace(/\s*-\s*regular\s*plan\s*/g, ' ')
     .replace(/\s*direct\s*plan\s*/g, ' ')
@@ -70,6 +101,7 @@ function cleanSchemeName(name) {
     .replace(/\s*-\s*growth\s*plan\s*/g, ' ')
     .replace(/\s*-\s*growth\s*/g, ' ')
     .replace(/\s*growth\s*/g, ' ')
+    .replace(/[^a-z0-9]+/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
 }
@@ -173,6 +205,7 @@ class AmfiService {
     this.schemeMap = new Map(); // id -> scheme object
     this.navHistoryCache = new Map(); // schemeCode -> { navList: [{date, nav}], timestamp }
     this.computedCache = new Map(); // cacheKey -> { data, timestamp }
+    this._saveCacheTimer = null;
     // Initialize to yesterday's date dynamically
     const yesterday = new Date();
     yesterday.setDate(yesterday.getDate() - 1);
@@ -180,6 +213,51 @@ class AmfiService {
     this.lastUpdated = new Date().toISOString();
     this.isInitialized = false;
     this.inFlightInitPromise = null;
+
+    // Load persistent NAV history cache from disk on startup
+    this.loadDiskNavCache();
+  }
+
+  loadDiskNavCache() {
+    try {
+      if (fs.existsSync(NAV_CACHE_FILE)) {
+        const raw = fs.readFileSync(NAV_CACHE_FILE, 'utf-8');
+        const parsed = JSON.parse(raw);
+        if (parsed && typeof parsed === 'object') {
+          let count = 0;
+          for (const [codeStr, entry] of Object.entries(parsed)) {
+            const code = Number(codeStr);
+            if (code && entry && Array.isArray(entry.navList)) {
+              this.navHistoryCache.set(code, entry);
+              count++;
+            }
+          }
+          logger.info(`Loaded ${count} schemes NAV history from disk cache.`);
+        }
+      }
+    } catch (err) {
+      logger.warn(`Could not read NAV history disk cache: ${err.message}`);
+    }
+  }
+
+  scheduleNavCacheSave() {
+    if (this._saveCacheTimer) return;
+    this._saveCacheTimer = setTimeout(() => {
+      this._saveCacheTimer = null;
+      try {
+        if (!fs.existsSync(CACHE_DIR)) {
+          fs.mkdirSync(CACHE_DIR, { recursive: true });
+        }
+        const obj = {};
+        for (const [code, val] of this.navHistoryCache.entries()) {
+          obj[code] = val;
+        }
+        fs.writeFileSync(NAV_CACHE_FILE, JSON.stringify(obj), 'utf-8');
+        logger.info(`Persisted ${this.navHistoryCache.size} schemes NAV history to disk cache.`);
+      } catch (err) {
+        logger.warn(`Failed to persist NAV history to disk: ${err.message}`);
+      }
+    }, 4000);
   }
 
   formatAUM(dailyAUM) {
@@ -224,21 +302,61 @@ class AmfiService {
   /**
    * Fetch Live AUM, Benchmarks, and Riskometers directly from official AMFI Fund Performance endpoint
    */
+  /**
+   * Fetch Live AUM, Benchmarks, and Riskometers directly from official AMFI Fund Performance endpoint
+   * Covers all 5 AMFI Categories: Equity, Debt, Hybrid, Solution Oriented, and Other (Index/ETFs/FoFs)
+   */
   async fetchAmfiLiveAumData() {
-    const amfiEntries = [];
+    let diskCache = null;
+    try {
+      if (fs.existsSync(AUM_CACHE_FILE)) {
+        const raw = fs.readFileSync(AUM_CACHE_FILE, 'utf-8');
+        const parsed = JSON.parse(raw);
+        if (parsed && Array.isArray(parsed.entries) && parsed.entries.length > 0) {
+          diskCache = parsed;
+          logger.info(`Loaded AMFI AUM disk cache with ${parsed.entries.length} schemes.`);
+        }
+      }
+    } catch (e) {
+      logger.warn(`Could not read AMFI AUM disk cache: ${e.message}`);
+    }
+
+    const AMFI_QUERY_PAIRS = [
+      // Category 1: Equity
+      { category: 1, subCategory: 1 }, { category: 1, subCategory: 2 }, { category: 1, subCategory: 3 }, { category: 1, subCategory: 4 },
+      { category: 1, subCategory: 5 }, { category: 1, subCategory: 6 }, { category: 1, subCategory: 7 }, { category: 1, subCategory: 8 },
+      { category: 1, subCategory: 9 }, { category: 1, subCategory: 10 }, { category: 1, subCategory: 11 }, { category: 1, subCategory: 12 },
+      { category: 1, subCategory: 44 }, { category: 1, subCategory: 45 },
+
+      // Category 2: Debt (Liquid, Overnight, Gilt, Money Market, Corporate Bond, etc.)
+      { category: 2, subCategory: 13 }, { category: 2, subCategory: 14 }, { category: 2, subCategory: 15 }, { category: 2, subCategory: 16 },
+      { category: 2, subCategory: 17 }, { category: 2, subCategory: 18 }, { category: 2, subCategory: 19 }, { category: 2, subCategory: 20 },
+      { category: 2, subCategory: 21 }, { category: 2, subCategory: 22 }, { category: 2, subCategory: 23 }, { category: 2, subCategory: 24 },
+      { category: 2, subCategory: 25 }, { category: 2, subCategory: 26 }, { category: 2, subCategory: 28 }, { category: 2, subCategory: 29 },
+
+      // Category 3: Hybrid (Aggressive, Conservative, Arbitrage, Balanced Advantage, etc.)
+      { category: 3, subCategory: 30 }, { category: 3, subCategory: 31 }, { category: 3, subCategory: 32 }, { category: 3, subCategory: 33 },
+      { category: 3, subCategory: 34 }, { category: 3, subCategory: 35 }, { category: 3, subCategory: 40 },
+
+      // Category 4: Solution Oriented (Children, Retirement)
+      { category: 4, subCategory: 36 }, { category: 4, subCategory: 37 }, { category: 4, subCategory: 39 },
+
+      // Category 5: Other (Index Funds, ETFs, FoFs)
+      { category: 5, subCategory: 38 }, { category: 5, subCategory: 39 }
+    ];
+
+    let amfiEntries = [];
     let resolvedDate = null;
     const today = new Date();
-    const subCats = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 12, 13, 14, 15];
 
-    // AMFI updates performance data around 7-9 PM evening. Check candidate dates from today backwards.
-    for (let dayOffset = 0; dayOffset <= 5; dayOffset++) {
+    for (let dayOffset = 0; dayOffset <= 4; dayOffset++) {
       const candidateDate = new Date(today);
       candidateDate.setDate(today.getDate() - dayOffset);
       const dateStr = formatAmfiDate(candidateDate);
 
-      let successCount = 0;
+      const dayEntries = [];
 
-      for (const subCat of subCats) {
+      await pMap(AMFI_QUERY_PAIRS, async (p) => {
         try {
           const res = await fetch('https://www.amfiindia.com/gateway/pollingsebi/api/amfi/fundperformance', {
             method: 'POST',
@@ -248,44 +366,60 @@ class AmfiService {
             },
             body: JSON.stringify({
               maturityType: 1,
-              category: 1,
-              subCategory: subCat,
+              category: p.category,
+              subCategory: p.subCategory,
               mfid: 0,
               reportDate: dateStr
             }),
-            signal: AbortSignal.timeout(2500)
+            signal: AbortSignal.timeout(3500)
           });
 
           if (res.ok) {
             const json = await res.json();
             const list = json.data || [];
-            if (list.length > 0) {
-              successCount += list.length;
-              list.forEach(item => {
-                if (item.schemeName) {
-                  amfiEntries.push({
-                    rawName: item.schemeName,
-                    cleanName: cleanSchemeName(item.schemeName),
-                    dailyAUM: item.dailyAUM ? Number(item.dailyAUM) : null,
-                    benchmark: item.benchmark ? String(item.benchmark).trim() : 'N/A',
-                    riskometerScheme: item.riskometerScheme ? String(item.riskometerScheme).trim() : 'N/A',
-                    navRegular: item.navRegular ? Number(item.navRegular) : null,
-                    navDirect: item.navDirect ? Number(item.navDirect) : null
-                  });
-                }
-              });
-            }
+            list.forEach(item => {
+              if (item.schemeName) {
+                dayEntries.push({
+                  rawName: item.schemeName,
+                  cleanName: cleanSchemeName(item.schemeName),
+                  dailyAUM: item.dailyAUM ? Number(item.dailyAUM) : null,
+                  benchmark: item.benchmark ? String(item.benchmark).trim() : 'N/A',
+                  riskometerScheme: item.riskometerScheme ? String(item.riskometerScheme).trim() : 'N/A',
+                  navRegular: item.navRegular ? Number(item.navRegular) : null,
+                  navDirect: item.navDirect ? Number(item.navDirect) : null
+                });
+              }
+            });
           }
-        } catch (err) {
-          // Timeout or connection error for subcategory fetch
-        }
+        } catch (err) {}
+      }, 8);
+
+      if (dayEntries.length > amfiEntries.length) {
+        amfiEntries = dayEntries;
+        resolvedDate = dateStr;
       }
 
-      if (successCount > 0) {
-        resolvedDate = dateStr;
-        logger.info(`Successfully fetched ${amfiEntries.length} live AMFI AUM entries for report date ${dateStr}!`);
+      if (amfiEntries.length >= 1800) {
+        logger.info(`Successfully fetched full set of ${amfiEntries.length} live AMFI AUM entries across all categories for report date ${dateStr}!`);
         break;
       }
+    }
+
+    if (amfiEntries.length > 0) {
+      try {
+        if (!fs.existsSync(CACHE_DIR)) fs.mkdirSync(CACHE_DIR, { recursive: true });
+        fs.writeFileSync(AUM_CACHE_FILE, JSON.stringify({
+          savedAt: new Date().toISOString(),
+          reportDate: resolvedDate,
+          entries: amfiEntries
+        }), 'utf-8');
+      } catch (err) {
+        logger.warn(`Failed to write AMFI AUM cache to disk: ${err.message}`);
+      }
+    } else if (diskCache) {
+      logger.info(`Using disk-cached ${diskCache.entries.length} AMFI AUM entries.`);
+      amfiEntries = diskCache.entries;
+      resolvedDate = diskCache.reportDate;
     }
 
     // Resolve latest published NAV date across Indian mutual funds
@@ -314,7 +448,7 @@ class AmfiService {
       const startTime = Date.now();
 
       try {
-        // 1. Fetch live AMFI AUM dataset
+        // 1. Fetch live AMFI AUM dataset across all categories
         const amfiList = await this.fetchAmfiLiveAumData();
 
         // 2. Fetch full master scheme directory from official API endpoint
@@ -326,14 +460,69 @@ class AmfiService {
 
         const pairedMap = new Map();
 
-        // Helper to match AMFI AUM entry for a scheme
+        const stopWords = new Set(['fund', 'scheme', 'plan', 'growth', 'option', 'plus', 'direct', 'regular', 'retail', 'institutional']);
+
+        // Build cleanName -> amfiItem map for instant exact matching
+        const cleanToAmfiMap = new Map();
+        // Inverted index for fast candidate lookup by primary/brand token
+        const amfiTokenIndex = new Map();
+
+        amfiList.forEach(a => {
+          if (!cleanToAmfiMap.has(a.cleanName)) {
+            cleanToAmfiMap.set(a.cleanName, a);
+          }
+          a._tokens = a.cleanName.split(' ').filter(w => w.length > 2 && !stopWords.has(w));
+          a._tokensSet = new Set(a._tokens);
+
+          a._tokens.forEach(t => {
+            if (!amfiTokenIndex.has(t)) {
+              amfiTokenIndex.set(t, []);
+            }
+            amfiTokenIndex.get(t).push(a);
+          });
+        });
+
+        // Sub-millisecond matching helper to associate scheme names with AMFI AUM records
         const findAmfiMatch = (displayName) => {
+          if (!displayName) return null;
           const sClean = cleanSchemeName(displayName);
-          return amfiList.find(a => 
-            a.cleanName === sClean || 
-            (a.cleanName.length > 5 && sClean.includes(a.cleanName)) ||
-            (sClean.length > 5 && a.cleanName.includes(sClean))
-          );
+
+          // 1. Exact clean match
+          if (cleanToAmfiMap.has(sClean)) return cleanToAmfiMap.get(sClean);
+
+          // 2. Token-indexed candidate search
+          const sTokens = sClean.split(' ').filter(w => w.length > 2 && !stopWords.has(w));
+          if (sTokens.length >= 2) {
+            const primaryToken = sTokens[0];
+            const candidates = amfiTokenIndex.get(primaryToken);
+            if (candidates && candidates.length > 0) {
+              // Substring check on candidate subset
+              for (const a of candidates) {
+                if ((a.cleanName.length > 5 && sClean.includes(a.cleanName)) ||
+                    (sClean.length > 5 && a.cleanName.includes(sClean))) {
+                  return a;
+                }
+              }
+
+              // Overlap check on candidate subset
+              let best = null;
+              let highestOverlap = 0;
+              for (const a of candidates) {
+                let overlap = 0;
+                for (const t of sTokens) {
+                  if (a._tokensSet.has(t)) overlap++;
+                }
+                const ratio = overlap / Math.max(sTokens.length, a._tokens.length);
+                if (overlap >= 2 && ratio >= 0.55 && overlap > highestOverlap) {
+                  highestOverlap = overlap;
+                  best = a;
+                }
+              }
+              if (best) return best;
+            }
+          }
+
+          return null;
         };
 
         // 1. Seed the 34 allowlist schemes to guarantee exact IDs, display names, and AMFI AUM
@@ -504,14 +693,17 @@ class AmfiService {
     }
 
     try {
-      const res = await fetch(`https://api.mfapi.in/mf/${code}`, { signal: AbortSignal.timeout(8000) });
-      if (!res.ok) return [];
+      const res = await fetch(`https://api.mfapi.in/mf/${code}`, { signal: AbortSignal.timeout(3500) });
+      if (!res.ok) return cached ? cached.navList : [];
       const payload = await res.json();
       const navList = payload.data || [];
-      this.navHistoryCache.set(code, {
-        navList,
-        timestamp: now
-      });
+      if (navList.length > 0) {
+        this.navHistoryCache.set(code, {
+          navList,
+          timestamp: now
+        });
+        this.scheduleNavCacheSave();
+      }
       return navList;
     } catch (err) {
       logger.warn(`Failed to fetch NAV history for scheme code ${code}: ${err.message}`);
@@ -797,9 +989,10 @@ class AmfiService {
     const startIndex = (pageNum - 1) * limitNum;
     const pageItems = filtered.slice(startIndex, startIndex + limitNum);
 
-    // Compute returns for current page items asynchronously
-    const fundsWithReturns = await Promise.all(
-      pageItems.map(async (scheme) => {
+    // Compute returns for current page items with bounded concurrency
+    const fundsWithReturns = await pMap(
+      pageItems,
+      async (scheme) => {
         const computed = await this.computeReturnsForScheme(scheme, plan, daysList, startDate, endDate, asOfDate);
         return {
           id: scheme.id,
@@ -817,7 +1010,8 @@ class AmfiService {
           directSchemeCode: scheme.directSchemeCode,
           ...computed
         };
-      })
+      },
+      12
     );
 
     return {
@@ -849,9 +1043,10 @@ class AmfiService {
       .map(id => this.schemeMap.get(id))
       .filter(Boolean);
 
-    // Compute returns for selected funds
-    const fundsWithReturns = await Promise.all(
-      matchedSchemes.map(async (scheme) => {
+    // Compute returns for selected funds with bounded concurrency
+    const fundsWithReturns = await pMap(
+      matchedSchemes,
+      async (scheme) => {
         const computed = await this.computeReturnsForScheme(scheme, plan, daysList, startDate, endDate, asOfDate);
         return {
           id: scheme.id,
@@ -868,7 +1063,8 @@ class AmfiService {
           directSchemeCode: scheme.directSchemeCode,
           ...computed
         };
-      })
+      },
+      12
     );
 
     // Category-wise grouping & alphabetical sorting within category

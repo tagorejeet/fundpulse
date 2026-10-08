@@ -604,7 +604,7 @@ export const CustomFundList = ({
                         {mode === 'days' ? (
                           customDaysList.map(d => (
                             <td key={d} className="p-3 text-right">
-                              {formatPct(idx.dayReturns?.[d] ?? idx[`return${d}d`])}
+                              {formatPct(idx.dayReturns?.[d] ?? idx[`return_${d}d`] ?? idx[`return${d}d`])}
                             </td>
                           ))
                         ) : (
